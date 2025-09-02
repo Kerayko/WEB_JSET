@@ -1,0 +1,3075 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>TRC_CAN Data Analytics and Visualization </title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://cdn.jsdelivr.net/npm/font-awesome@4.7.0/css/font-awesome.min.css" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.8/dist/chart.umd.min.js"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        primary: '#3b82f6',
+                        secondary: '#6366f1',
+                        success: '#10b981',
+                        warning: '#f59e0b',
+                        danger: '#ef4444',
+                        dark: '#1e293b',
+                    },
+                    fontFamily: {
+                        sans: ['Inter', 'system-ui', 'sans-serif'],
+                    },
+                }
+            }
+        }
+    </script>
+    <style type="text/tailwindcss">
+        @layer utilities {
+            .content-auto {
+                content-visibility: auto;
+            }
+            .scrollbar-thin {
+                scrollbar-width: thin;
+            }
+            .scrollbar-hide::-webkit-scrollbar {
+                display: none;
+            }
+            .scrollbar-hide {
+                -ms-overflow-style: none;
+                scrollbar-width: none;
+            }
+            .file-drop-active {
+                @apply border-primary bg-blue-50;
+            }
+            .animated-gradient {
+                background-size: 200% 200%;
+                animation: gradientShift 15s ease infinite;
+            }
+            @keyframes gradientShift {
+            0% { background-position: 0% 50%; }
+            50% { background-position: 100% 50%; }
+            100% { background-position: 0% 50%; }
+        }
+        
+        /* 加密的水印样式 */
+        body::before {
+            content: 'JSET';
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: -1;
+            font-size: 10rem;
+            font-weight: bold;
+            color: rgba(0, 0, 0, 0.03);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            transform: rotate(-45deg);
+            pointer-events: none;
+            letter-spacing: 2rem;
+            text-transform: uppercase;
+            /* 防篡改属性 */
+            user-select: none;
+            -webkit-user-select: none;
+            -moz-user-select: none;
+            -ms-user-select: none;
+            touch-action: none;
+        }
+        }
+    </style>
+</head>
+<body class="min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 dark:from-gray-900 dark:to-gray-800 animated-gradient text-gray-800 dark:text-gray-100">
+    <div class="container mx-auto px-4 py-8 max-w-7xl">
+        <!-- 头部 -->
+        <header class="mb-8 text-center">
+            <h1 class="text-[clamp(2rem,5vw,3.5rem)] font-bold mb-4 text-transparent bg-clip-text bg-gradient-to-r from-primary to-secondary">TRC_CAN Data Analytics and Visualization</h1>
+            <p class="text-lg max-w-2xl mx-auto text-gray-600 dark:text-gray-300">
+                解析和可视化PCAN-Explorer生成的TRC文件数据，支持数据筛选、图表分析和导出功能
+            </p>
+        </header>
+
+        <!-- 主要内容区 -->
+        <main class="space-y-8">
+            <!-- 文件上传区 -->
+            <section class="bg-white dark:bg-gray-800 rounded-xl shadow-lg p-6 transform transition-all hover:shadow-xl">
+                <div class="flex flex-col md:flex-row items-center justify-between space-y-4 md:space-y-0">
+                    <div class="w-full md:w-2/3">
+                        <label for="fileUpload" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                            上传TRC文件
+                        </label>
+                        <div id="fileDropArea" class="border-2 border-dashed border-gray-300 dark:border-gray-600 rounded-lg p-8 text-center cursor-pointer transition-all hover:border-primary dark:hover:border-primary">
+                            <i class="fa fa-cloud-upload text-4xl text-gray-400 dark:text-gray-500 mb-3"></i>
+                            <p class="mb-2 text-gray-600 dark:text-gray-400">拖放文件到此处，或</p>
+                            <span class="inline-block px-4 py-2 bg-primary text-white rounded-md shadow transition transform hover:scale-105">
+                                浏览文件
+                            </span>
+                            <input type="file" id="fileUpload" class="hidden" accept=".trc">
+                        </div>
+                        <p id="fileInfo" class="mt-2 text-sm text-gray-500 dark:text-gray-400"></p>
+                    </div>
+                    
+                    <div class="w-full md:w-1/3 flex flex-col space-y-3">
+                        <button id="parseButton" class="py-3 px-6 bg-primary hover:bg-primary/90 text-white font-medium rounded-lg shadow transition transform hover:scale-105 flex items-center justify-center space-x-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                            disabled>
+                            <i class="fa fa-cogs"></i>
+                            <span>解析文件</span>
+                        </button>
+                        <button id="clearButton" class="py-3 px-6 bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600 text-gray-800 dark:text-gray-200 font-medium rounded-lg shadow transition transform hover:scale-105 flex items-center justify-center space-x-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                            disabled>
+                            <i class="fa fa-trash"></i>
+                            <span>清除数据</span>
+                        </button>
+                    </div>
+                </div>
+            </section>
+
+            <!-- 过滤和统计信息 -->
+            <section id="filterSection" class="bg-white dark:bg-gray-800 rounded-xl shadow-lg p-6 transform transition-all hover:shadow-xl hidden">
+                <div class="flex flex-col md:flex-row md:items-center justify-between space-y-4 md:space-y-0">
+                    <div class="w-full md:w-1/3">
+                        <label for="messageTypeFilter" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                            按类型筛选
+                        </label>
+                        <select id="messageTypeFilter" class="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-primary">
+                            <option value="all">全部</option>
+                            <option value="Rx">接收 (Rx)</option>
+                            <option value="Tx">发送 (Tx)</option>
+                        </select>
+                    </div>
+                    
+                    <div class="w-full md:w-1/3">
+                        <label for="canIdCategory" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                            按CAN报文标识符分类
+                        </label>
+                        <select id="canIdCategory" class="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-primary">
+                            <option value="all">全部</option>
+                        </select>
+                    </div>
+                    
+                    <div class="flex space-x-2">
+                        <button id="filterButton" class="py-2 px-4 bg-secondary hover:bg-secondary/90 text-white font-medium rounded-lg shadow transition transform hover:scale-105">
+                            <i class="fa fa-filter"></i> 筛选
+                        </button>
+                        <button id="resetFilterButton" class="py-2 px-4 bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600 text-gray-800 dark:text-gray-200 font-medium rounded-lg shadow transition transform hover:scale-105">
+                            <i class="fa fa-refresh"></i> 重置
+                        </button>
+                    </div>
+                </div>
+                
+                <div class="mt-6 grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <div class="bg-gray-50 dark:bg-gray-700/50 p-4 rounded-lg">
+                        <p class="text-sm text-gray-500 dark:text-gray-400">总消息数</p>
+                        <p id="totalMessages" class="text-2xl font-bold text-primary">0</p>
+                    </div>
+                    <div class="bg-gray-50 dark:bg-gray-700/50 p-4 rounded-lg">
+                        <p class="text-sm text-gray-500 dark:text-gray-400">接收消息数</p>
+                        <p id="rxMessages" class="text-2xl font-bold text-secondary">0</p>
+                    </div>
+                    <div class="bg-gray-50 dark:bg-gray-700/50 p-4 rounded-lg">
+                        <p class="text-sm text-gray-500 dark:text-gray-400">发送消息数</p>
+                        <p id="txMessages" class="text-2xl font-bold text-success">0</p>
+                    </div>
+                </div>
+                
+                <!-- 自定义公式解析区域 -->
+                <div class="mt-6">
+                    <h3 class="text-lg font-semibold text-gray-800 dark:text-gray-200 mb-4">自定义公式解析</h3>
+                    <div class="bg-gray-50 dark:bg-gray-700/50 p-4 rounded-lg">
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                            <div>
+                                <label for="formulaCanId" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                                    CAN报文标识符
+                                </label>
+                                <input type="text" id="formulaCanId" placeholder="例如: 18A3A6BC" class="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-primary">
+                            </div>
+                            <div>
+                                <label for="formulaByteIndex" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                                    数据字节位置 (0-7)
+                                </label>
+                                <select id="formulaByteIndex" class="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-primary">
+                                    <option value="0">字节 0</option>
+                                    <option value="1">字节 1</option>
+                                    <option value="2">字节 2</option>
+                                    <option value="3">字节 3</option>
+                                    <option value="4">字节 4</option>
+                                    <option value="5">字节 5</option>
+                                    <option value="6">字节 6</option>
+                                    <option value="7">字节 7</option>
+                                </select>
+                            </div>
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                                    位选择模式
+                                </label>
+                                <div class="flex space-x-2">
+                                    <button id="byteModeBtn" class="flex-1 py-2 px-3 bg-primary text-white text-sm font-medium rounded-lg shadow transition transform hover:scale-105">
+                                        字节模式
+                                    </button>
+                                    <button id="bitModeBtn" class="flex-1 py-2 px-3 bg-gray-200 dark:bg-gray-700 text-gray-800 dark:text-gray-200 text-sm font-medium rounded-lg shadow transition transform hover:scale-105">
+                                        位模式
+                                    </button>
+                                </div>
+                            </div>
+                            <div>
+                                <label for="formulaOffset" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                                    偏置值
+                                </label>
+                                <input type="number" id="formulaOffset" value="0" class="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-primary">
+                            </div>
+                            <div>
+                                <label for="formulaPrecision" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                                    精度
+                                </label>
+                                <input type="number" id="formulaPrecision" value="1" step="0.1" class="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-primary">
+                            </div>
+                        </div>
+                        <div class="mb-4">
+                            <label for="formulaDescription" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                                解析结果描述
+                            </label>
+                            <input type="text" id="formulaDescription" placeholder="例如: 电池进水温度" class="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-primary">
+                        </div>
+                        
+                        <!-- 位选择矩阵 -->
+                        <div id="bitSelectionMatrix" class="mb-4 hidden">
+                            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                                选择数据位 (64位报文模式)
+                            </label>
+                            <div class="bg-gray-50 dark:bg-gray-700/50 p-4 rounded-lg">
+                                <div id="bitMatrix" class="grid grid-cols-8 gap-1 max-w-xs mx-auto">
+                                    <!-- 位矩阵将通过JavaScript动态生成 -->
+                                </div>
+                                <div class="mt-2 text-sm text-gray-600 dark:text-gray-400">
+                                    <span>选中的位: </span>
+                                    <span id="selectedBitsInfo" class="font-mono">无</span>
+                                </div>
+                                <div class="mt-1 text-xs text-gray-500 dark:text-gray-500">
+                                    提示：在64位报文模式下，系统将所有8个字节组合为64位整数，您可以选择任意位进行解析
+                                </div>
+                            </div>
+                        </div>
+                        <div class="flex space-x-2">
+                            <button id="applyFormula" class="py-2 px-4 bg-primary hover:bg-primary/90 text-white font-medium rounded-lg shadow transition transform hover:scale-105">
+                                <i class="fa fa-calculator"></i> 应用公式
+                            </button>
+                            <button id="resetFormula" class="py-2 px-4 bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600 text-gray-800 dark:text-gray-200 font-medium rounded-lg shadow transition transform hover:scale-105">
+                                <i class="fa fa-refresh"></i> 重置
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- 数据表格 -->
+            <section id="dataTableSection" class="bg-white dark:bg-gray-800 rounded-xl shadow-lg overflow-hidden transform transition-all hover:shadow-xl hidden">
+                <div class="p-6 border-b border-gray-200 dark:border-gray-700">
+                    <div class="flex flex-col md:flex-row md:items-center justify-between">
+                        <h2 class="text-xl font-bold text-gray-800 dark:text-gray-100">CAN消息数据</h2>
+                    </div>
+                </div>
+                <div class="flex flex-col lg:flex-row">
+                    <div class="overflow-x-auto lg:w-3/4">
+                        <table class="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
+                            <thead class="bg-gray-50 dark:bg-gray-700">
+                                <tr>
+                                    <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">消息编号</th>
+                                    <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">时间偏移(ms)</th>
+                                    <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">总线</th>
+                                    <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">类型</th>
+                                    <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">CAN报文标识符</th>
+                                    <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">数据长度</th>
+                                    <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">数据字节</th>
+                                    <!-- 计算结果列将通过JavaScript动态添加 -->
+                                </tr>
+                            </thead>
+                            <tbody id="dataTableBody" class="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
+                                <!-- 数据将通过JavaScript动态填充 -->
+                            </tbody>
+                        </table>
+                    </div>
+
+                </div>
+                <div class="p-4 border-t border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-700/50 flex justify-between items-center">
+                    <div class="text-sm text-gray-500 dark:text-gray-400">
+                        显示 <span id="shownCount">0</span> 条，共 <span id="totalCount">0</span> 条
+                    </div>
+                    <div class="flex space-x-2">
+                        <button id="prevPage" class="px-3 py-1 bg-gray-200 dark:bg-gray-600 text-gray-700 dark:text-gray-300 rounded hover:bg-gray-300 dark:hover:bg-gray-500 disabled:opacity-50 disabled:cursor-not-allowed" disabled>
+                            <i class="fa fa-chevron-left"></i>
+                        </button>
+                        <button id="nextPage" class="px-3 py-1 bg-gray-200 dark:bg-gray-600 text-gray-700 dark:text-gray-300 rounded hover:bg-gray-300 dark:hover:bg-gray-500 disabled:opacity-50 disabled:cursor-not-allowed" disabled>
+                            <i class="fa fa-chevron-right"></i>
+                        </button>
+                    </div>
+                </div>
+            </section>
+
+            <!-- 可视化侧边栏 -->
+            <!-- 数据可视化侧边栏 -->
+            <div id="visualizationSidebar" class="fixed left-0 top-0 h-full w-1/3 bg-white dark:bg-gray-800 shadow-xl transform transition-all duration-300 z-40 overflow-y-auto" style="width: 50px;">
+                <div id="visualizationSidebarCollapsed" class="h-full flex flex-col items-center justify-center p-4">
+                    <button id="expandVisualizationSidebar" class="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 mb-4">
+                        <i class="fa fa-chevron-right"></i>
+                    </button>
+                    <span class="text-xs text-gray-500 dark:text-gray-400 writing-mode-vertical">数据可视化</span>
+                </div>
+                <div id="visualizationSidebarExpanded" class="h-full flex flex-col hidden">
+                    <div class="p-4 border-b border-gray-200 dark:border-gray-700 flex justify-between items-center">
+                        <h2 class="text-lg font-bold text-gray-800 dark:text-gray-100">数据可视化</h2>
+                        <div class="flex space-x-2">
+                            <button id="toggleVisualizationSidebar" class="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200">
+                                <i class="fa fa-chevron-left" id="toggleVisualizationIcon"></i>
+                            </button>
+                            <button id="closeVisualizationSidebar" class="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200">
+                                <i class="fa fa-times"></i>
+                            </button>
+                        </div>
+                    </div>
+                    <div class="p-4">
+                        <div class="mb-4">
+                            <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                                自动识别解析结果关键字段
+                            </label>
+                            <div id="autoDetectedFields" class="space-y-2 max-h-60 overflow-y-auto mb-4">
+                                <p class="text-sm text-gray-500 dark:text-gray-400">暂无解析结果</p>
+                            </div>
+                            <button id="generateChart" class="w-full px-3 py-2 bg-primary hover:bg-primary/90 text-white text-sm rounded-lg shadow transition disabled:opacity-50 disabled:cursor-not-allowed" disabled>
+                                <i class="fa fa-line-chart mr-2"></i>生成图表
+                            </button>
+                        </div>
+                        
+                        <div class="mb-4">
+                            <canvas id="visualizationChart" class="w-full h-64 hidden"></canvas>
+                        </div>
+                        
+                        <div id="chartInfo" class="mt-4 hidden">
+                            <div class="flex justify-between items-center mb-2">
+                                <h3 class="text-md font-semibold text-gray-800 dark:text-gray-200">图表信息</h3>
+                                <button id="clearChart" class="px-3 py-1 bg-red-500 hover:bg-red-600 text-white text-sm rounded-lg shadow transition">
+                                    <i class="fa fa-trash"></i> 清除图表
+                                </button>
+                            </div>
+                            <div class="bg-gray-50 dark:bg-gray-700/50 p-3 rounded-lg">
+                                <div class="text-sm text-gray-600 dark:text-gray-400 mb-1">时间范围:</div>
+                                <div id="timeRange" class="text-sm font-medium text-gray-800 dark:text-gray-200 mb-2">-</div>
+                                <div class="text-sm text-gray-600 dark:text-gray-400 mb-1">数据字段:</div>
+                                <div id="dataFields" class="text-sm font-medium text-gray-800 dark:text-gray-200">-</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 解析结果侧边栏 -->
+            <div id="formulaResultSidebar" class="fixed right-0 top-0 h-full w-1/3 bg-white dark:bg-gray-800 shadow-xl transform transition-all duration-300 z-40 overflow-y-auto" style="width: 50px;">
+                <div id="sidebarCollapsed" class="h-full flex flex-col items-center justify-center p-4">
+                    <button id="expandSidebar" class="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 mb-4">
+                        <i class="fa fa-chevron-left"></i>
+                    </button>
+                    <span class="text-xs text-gray-500 dark:text-gray-400 writing-mode-vertical">解析结果</span>
+                </div>
+                <div id="sidebarExpanded" class="h-full flex flex-col hidden">
+                <div class="p-4 border-b border-gray-200 dark:border-gray-700 flex justify-between items-center">
+                    <h2 class="text-lg font-bold text-gray-800 dark:text-gray-100">解析结果</h2>
+                    <div class="flex space-x-2">
+                        <button id="toggleSidebar" class="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200">
+                            <i class="fa fa-chevron-right" id="toggleIcon"></i>
+                        </button>
+                        <button id="closeSidebar" class="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200">
+                            <i class="fa fa-times"></i>
+                        </button>
+                    </div>
+                </div>
+                <div class="p-4">
+                    <div class="mb-4">
+                        <label for="formulaResultSelect" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                            选择解析结果
+                        </label>
+                        <div class="flex space-x-2">
+                            <select id="formulaResultSelect" class="flex-1 px-3 py-1 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-primary">
+                                <option value="">请选择</option>
+                            </select>
+                            <button id="deleteFormulaResultBtn" class="px-3 py-1 bg-red-500 hover:bg-red-600 text-white text-sm rounded-lg shadow transition disabled:opacity-50 disabled:cursor-not-allowed" title="删除选中的解析结果" disabled>
+                                <i class="fa fa-trash"></i>
+                            </button>
+                        </div>
+                    </div>
+                    
+                    <div class="mb-4">
+                        <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                            可视化数据字段
+                        </label>
+                        <div id="draggableFields" class="space-y-2 max-h-60 overflow-y-auto">
+                            <p class="text-sm text-gray-500 dark:text-gray-400">暂无可视化数据字段</p>
+                        </div>
+                    </div>
+                    <div id="formulaResultContent" class="bg-gray-50 dark:bg-gray-700/50 p-3 rounded-lg">
+                        <p class="text-sm text-gray-500 dark:text-gray-400">请先应用公式解析数据</p>
+                    </div>
+                    <div id="resultPagination" class="mt-4 hidden">
+                        <div class="flex justify-between items-center">
+                            <div class="text-xs text-gray-500 dark:text-gray-400">
+                                显示 <span id="resultShownCount">0</span> 条，共 <span id="resultTotalCount">0</span> 条
+                            </div>
+                            <div class="flex items-center space-x-1">
+                                <button id="resultPrevPage" class="px-2 py-1 bg-gray-200 dark:bg-gray-600 text-gray-700 dark:text-gray-300 rounded hover:bg-gray-300 dark:hover:bg-gray-500 disabled:opacity-50 disabled:cursor-not-allowed text-xs" disabled>
+                                    <i class="fa fa-chevron-left"></i>
+                                </button>
+                                <div class="flex items-center space-x-1">
+                                    <input type="number" id="resultPageInput" class="w-12 px-1 py-1 text-xs border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-center" min="1" value="1">
+                                    <span id="resultTotalPages" class="text-xs text-gray-500 dark:text-gray-400">/ 1</span>
+                                </div>
+                                <button id="resultGoToPage" class="px-2 py-1 bg-gray-200 dark:bg-gray-600 text-gray-700 dark:text-gray-300 rounded hover:bg-gray-300 dark:hover:bg-gray-500 text-xs">
+                                    跳转
+                                </button>
+                                <button id="resultNextPage" class="px-2 py-1 bg-gray-200 dark:bg-gray-600 text-gray-700 dark:text-gray-300 rounded hover:bg-gray-300 dark:hover:bg-gray-500 disabled:opacity-50 disabled:cursor-not-allowed text-xs" disabled>
+                                    <i class="fa fa-chevron-right"></i>
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                </div>
+            </div>
+
+
+
+            <!-- 数据可视化 -->
+            <section id="visualizationSection" class="bg-white dark:bg-gray-800 rounded-xl shadow-lg p-6 transform transition-all hover:shadow-xl hidden">
+                <h2 class="text-xl font-bold text-gray-800 dark:text-gray-100 mb-6">数据可视化</h2>
+                
+                <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                    <div>
+                        <label for="visualizationType" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                            选择可视化类型
+                        </label>
+                        <select id="visualizationType" class="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-primary">
+                            <option value="messageRate">消息速率</option>
+                            <option value="idDistribution">ID分布</option>
+                            <option value="dataValues">数据值变化</option>
+                        </select>
+                    </div>
+                    
+                    <div id="dataFieldSelector" class="hidden">
+                        <label for="dataField" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                            选择数据字段 (0-7)
+                        </label>
+                        <select id="dataField" class="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-primary">
+                            <option value="0">数据字节 0</option>
+                            <option value="1">数据字节 1</option>
+                            <option value="2">数据字节 2</option>
+                            <option value="3">数据字节 3</option>
+                            <option value="4">数据字节 4</option>
+                            <option value="5">数据字节 5</option>
+                            <option value="6">数据字节 6</option>
+                            <option value="7">数据字节 7</option>
+                        </select>
+                    </div>
+                </div>
+                
+                <div class="mt-6">
+                    <canvas id="visualizationChart" height="300"></canvas>
+                </div>
+            </section>
+
+            <!-- 导出功能 -->
+            <section id="exportSection" class="bg-white dark:bg-gray-800 rounded-xl shadow-lg p-6 transform transition-all hover:shadow-xl hidden">
+                <h2 class="text-xl font-bold text-gray-800 dark:text-gray-100 mb-4">导出数据</h2>
+                
+                <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
+                    <button id="exportCSV" class="py-3 px-6 bg-success hover:bg-success/90 text-white font-medium rounded-lg shadow transition transform hover:scale-105 flex flex-col items-center justify-center">
+                        <i class="fa fa-file-excel-o text-2xl mb-2"></i>
+                        <span>导出为CSV</span>
+                    </button>
+                    
+                    <button id="exportJSON" class="py-3 px-6 bg-warning hover:bg-warning/90 text-white font-medium rounded-lg shadow transition transform hover:scale-105 flex flex-col items-center justify-center">
+                        <i class="fa fa-file-code-o text-2xl mb-2"></i>
+                        <span>导出为JSON</span>
+                    </button>
+                    
+                    <button id="exportExcel" class="py-3 px-6 bg-emerald-600 hover:bg-emerald-700 text-white font-medium rounded-lg shadow transition transform hover:scale-105 flex flex-col items-center justify-center">
+                        <i class="fa fa-file-excel text-2xl mb-2"></i>
+                        <span>导出为Excel</span>
+                    </button>
+                    
+                    <button id="exportChart" class="py-3 px-6 bg-danger hover:bg-danger/90 text-white font-medium rounded-lg shadow transition transform hover:scale-105 flex flex-col items-center justify-center">
+                        <i class="fa fa-file-image-o text-2xl mb-2"></i>
+                        <span>导出图表</span>
+                    </button>
+                </div>
+            </section>
+        </main>
+
+        <!-- 页脚 -->
+        <footer class="mt-12 text-center text-sm text-gray-500 dark:text-gray-400">
+            <p>TRC-CAN Data Analytics powered by Jason Guo &copy; 2025 | 支持PCAN-Explorer TRC文件格式</p>
+        </footer>
+    </div>
+
+    <!-- 加载中模态框 -->
+    <div id="loadingModal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 hidden">
+        <div class="bg-white dark:bg-gray-800 rounded-lg p-6 flex flex-col items-center w-80">
+            <div class="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-primary mb-4"></div>
+            <p id="loadingText" class="text-gray-700 dark:text-gray-300 mb-3">处理中，请稍候...</p>
+            <div id="progressContainer" class="w-full bg-gray-200 rounded-full h-2.5 dark:bg-gray-700 hidden">
+                <div id="progressBar" class="bg-primary h-2.5 rounded-full" style="width: 0%"></div>
+            </div>
+            <p id="progressText" class="text-sm text-gray-500 dark:text-gray-400 mt-2 hidden">0%</p>
+        </div>
+    </div>
+
+    <!-- 通知消息 -->
+    <div id="notification" class="fixed bottom-4 right-4 px-6 py-3 rounded-lg shadow-lg transform transition-all duration-300 translate-y-20 opacity-0 z-50 flex items-center space-x-3">
+        <i id="notificationIcon" class="fa fa-info-circle text-lg"></i>
+        <p id="notificationText" class="text-sm"></p>
+    </div>
+
+    <script>
+        // 全局变量
+        let canData = [];
+        let filteredData = [];
+        let currentPage = 1;
+        const rowsPerPage = 50;
+        let visualizationChart = null;
+        let currentFile = null;
+        
+        // 右侧窗口分页相关变量
+        let currentResults = [];
+        let currentDescription = '';
+        let currentCanId = '';
+        let currentByteIndex = 0;
+        let currentOffset = 0;
+        let currentPrecision = 1;
+        let currentResultPage = 1;
+        const resultRowsPerPage = 200;
+        
+        // 存储每个标识符的计算结果列信息，键为CAN报文标识符
+        let calculatedColumns = {};
+        
+        // 位选择模式相关变量
+        let isBitSelectionMode = false; // 是否为位选择模式
+        let selectedBits = []; // 存储选中的位
+        let selectedByte = 0; // 当前选中的字节
+
+        // DOM元素
+        const fileUpload = document.getElementById('fileUpload');
+        const fileDropArea = document.getElementById('fileDropArea');
+        const fileInfo = document.getElementById('fileInfo');
+        const parseButton = document.getElementById('parseButton');
+        const clearButton = document.getElementById('clearButton');
+        const filterSection = document.getElementById('filterSection');
+        const dataTableSection = document.getElementById('dataTableSection');
+        const visualizationSection = document.getElementById('visualizationSection');
+        const exportSection = document.getElementById('exportSection');
+        const dataTableBody = document.getElementById('dataTableBody');
+        const messageTypeFilter = document.getElementById('messageTypeFilter');
+        const canIdCategory = document.getElementById('canIdCategory');
+        const formulaCanId = document.getElementById('formulaCanId');
+        const formulaByteIndex = document.getElementById('formulaByteIndex');
+        const formulaOffset = document.getElementById('formulaOffset');
+        const formulaPrecision = document.getElementById('formulaPrecision');
+        const formulaDescription = document.getElementById('formulaDescription');
+        const applyFormula = document.getElementById('applyFormula');
+        const resetFormula = document.getElementById('resetFormula');
+        
+        // 位选择模式相关元素
+        const byteModeBtn = document.getElementById('byteModeBtn');
+        const bitModeBtn = document.getElementById('bitModeBtn');
+        const bitSelectionMatrix = document.getElementById('bitSelectionMatrix');
+        const bitMatrix = document.getElementById('bitMatrix');
+        const selectedBitsInfo = document.getElementById('selectedBitsInfo');
+        const formulaResult = document.getElementById('formulaResult');
+        const formulaResultLabel = document.getElementById('formulaResultLabel');
+        const formulaResultSection = document.getElementById('formulaResultSection');
+        const formulaResultSelect = document.getElementById('formulaResultSelect');
+        const formulaResultContent = document.getElementById('formulaResultContent');
+        const formulaResultSidebar = document.getElementById('formulaResultSidebar');
+        const closeSidebar = document.getElementById('closeSidebar');
+        const toggleSidebar = document.getElementById('toggleSidebar');
+        const toggleIcon = document.getElementById('toggleIcon');
+        const resultPagination = document.getElementById('resultPagination');
+        const resultShownCount = document.getElementById('resultShownCount');
+        const resultTotalCount = document.getElementById('resultTotalCount');
+        const resultPrevPage = document.getElementById('resultPrevPage');
+        const resultNextPage = document.getElementById('resultNextPage');
+        const resultPageInput = document.getElementById('resultPageInput');
+        const resultTotalPages = document.getElementById('resultTotalPages');
+        const resultGoToPage = document.getElementById('resultGoToPage');
+        const sidebarCollapsed = document.getElementById('sidebarCollapsed');
+        const sidebarExpanded = document.getElementById('sidebarExpanded');
+        const expandSidebar = document.getElementById('expandSidebar');
+        const formulaResultValue = document.getElementById('formulaResultValue');
+        const formulaResultDetails = document.getElementById('formulaResultDetails');
+        const deleteFormulaResultBtn = document.getElementById('deleteFormulaResultBtn');
+        const filterButton = document.getElementById('filterButton');
+        const resetFilterButton = document.getElementById('resetFilterButton');
+        const totalMessages = document.getElementById('totalMessages');
+        const rxMessages = document.getElementById('rxMessages');
+        const txMessages = document.getElementById('txMessages');
+        const shownCount = document.getElementById('shownCount');
+        const totalCount = document.getElementById('totalCount');
+        const prevPage = document.getElementById('prevPage');
+        const nextPage = document.getElementById('nextPage');
+        const visualizationType = document.getElementById('visualizationType');
+        const dataFieldSelector = document.getElementById('dataFieldSelector');
+        const dataField = document.getElementById('dataField');
+        const exportCSV = document.getElementById('exportCSV');
+        const exportJSON = document.getElementById('exportJSON');
+        const exportChart = document.getElementById('exportChart');
+        
+
+        const loadingModal = document.getElementById('loadingModal');
+        const loadingText = document.getElementById('loadingText');
+        const progressContainer = document.getElementById('progressContainer');
+        const progressBar = document.getElementById('progressBar');
+        const progressText = document.getElementById('progressText');
+        const notification = document.getElementById('notification');
+        const notificationIcon = document.getElementById('notificationIcon');
+        const notificationText = document.getElementById('notificationText');
+
+        // 初始化事件监听
+        function initEventListeners() {
+            // 文件上传相关
+            fileUpload.addEventListener('change', handleFileSelect);
+            fileDropArea.addEventListener('click', () => fileUpload.click());
+            fileDropArea.addEventListener('dragover', handleDragOver);
+            fileDropArea.addEventListener('dragleave', handleDragLeave);
+            fileDropArea.addEventListener('drop', handleDrop);
+            parseButton.addEventListener('click', parseFile);
+            clearButton.addEventListener('click', clearData);
+
+            // 过滤相关
+            filterButton.addEventListener('click', applyFilter);
+            resetFilterButton.addEventListener('click', resetFilter);
+            canIdCategory.addEventListener('change', function() {
+            applyFilter();
+            // 同时更新表格中的计算结果列标题和数据
+            updateTableWithCalculatedData(this.value);
+        });
+            
+            // 自定义公式解析相关
+            applyFormula.addEventListener('click', applyCustomFormula);
+            resetFormula.addEventListener('click', resetCustomFormula);
+            
+            // 位选择模式按钮事件
+            byteModeBtn.addEventListener('click', function() {
+                isBitSelectionMode = false;
+                bitSelectionMatrix.classList.add('hidden');
+                byteModeBtn.classList.add('bg-primary', 'text-white');
+                byteModeBtn.classList.remove('bg-gray-200', 'text-gray-700');
+                bitModeBtn.classList.remove('bg-primary', 'text-white');
+                bitModeBtn.classList.add('bg-gray-200', 'text-gray-700');
+            });
+            
+            bitModeBtn.addEventListener('click', function() {
+                isBitSelectionMode = true;
+                bitSelectionMatrix.classList.remove('hidden');
+                bitModeBtn.classList.add('bg-primary', 'text-white');
+                bitModeBtn.classList.remove('bg-gray-200', 'text-gray-700');
+                byteModeBtn.classList.remove('bg-primary', 'text-white');
+                byteModeBtn.classList.add('bg-gray-200', 'text-gray-700');
+                
+                // 初始化位矩阵
+                initializeBitMatrix();
+            });
+            
+            // 关闭侧边栏
+            closeSidebar.addEventListener('click', function() {
+                // 折叠侧边栏
+                formulaResultSidebar.style.width = '50px';
+                sidebarCollapsed.classList.remove('hidden');
+                sidebarExpanded.classList.add('hidden');
+            });
+            
+            // 切换侧边栏
+            toggleSidebar.addEventListener('click', function() {
+                if (formulaResultSidebar.style.width === '50px') {
+                    // 展开侧边栏
+                    formulaResultSidebar.style.width = '33.333333%';
+                    sidebarCollapsed.classList.add('hidden');
+                    sidebarExpanded.classList.remove('hidden');
+                } else {
+                    // 折叠侧边栏
+                    formulaResultSidebar.style.width = '50px';
+                    sidebarCollapsed.classList.remove('hidden');
+                    sidebarExpanded.classList.add('hidden');
+                }
+            });
+            
+            // 展开侧边栏
+            expandSidebar.addEventListener('click', function() {
+                formulaResultSidebar.style.width = '33.333333%';
+                sidebarCollapsed.classList.add('hidden');
+                sidebarExpanded.classList.remove('hidden');
+            });
+            
+            // 分页按钮事件
+            resultPrevPage.addEventListener('click', function() {
+                if (currentResultPage > 1) {
+                    currentResultPage--;
+                    displayFormulaResults(currentResults, currentDescription, currentCanId, currentByteIndex, currentOffset, currentPrecision);
+                }
+            });
+            
+            resultNextPage.addEventListener('click', function() {
+                const totalPages = Math.ceil(currentResults.length / resultRowsPerPage);
+                if (currentResultPage < totalPages) {
+                    currentResultPage++;
+                    displayFormulaResults(currentResults, currentDescription, currentCanId, currentByteIndex, currentOffset, currentPrecision);
+                }
+            });
+            
+            // 页码跳转事件
+            resultGoToPage.addEventListener('click', function() {
+                const totalPages = Math.ceil(currentResults.length / resultRowsPerPage);
+                const inputPage = parseInt(resultPageInput.value);
+                
+                if (inputPage >= 1 && inputPage <= totalPages) {
+                    currentResultPage = inputPage;
+                    displayFormulaResults(currentResults, currentDescription, currentCanId, currentByteIndex, currentOffset, currentPrecision);
+                } else {
+                    showNotification('请输入有效的页码', 'error');
+                }
+            });
+            
+            // 页码输入框回车事件
+            resultPageInput.addEventListener('keypress', function(event) {
+                if (event.key === 'Enter') {
+                    resultGoToPage.click();
+                }
+            });
+            
+            // 解析结果选择事件
+            formulaResultSelect.addEventListener('change', function() {
+                const selectedValue = this.value;
+                if (!selectedValue) {
+                    formulaResultContent.innerHTML = '<p class="text-sm text-gray-500 dark:text-gray-400">请先应用公式解析数据</p>';
+                    // 禁用删除按钮
+                    deleteFormulaResultBtn.disabled = true;
+                    return;
+                }
+                
+                // 启用删除按钮
+                deleteFormulaResultBtn.disabled = false;
+                
+                // 获取选中的选项
+                const selectedOption = this.options[this.selectedIndex];
+                
+                // 从选项值中提取canId
+                const [canId] = selectedValue.split('_');
+                
+                // 从选项的dataset中获取原始的formulaKey
+                const formulaKey = selectedOption.dataset.originalKey;
+                
+                const formula = calculatedColumns[canId][formulaKey];
+                
+                if (formula && formula.results) {
+                    displayFormulaResults(
+                        formula.results, 
+                        formula.description, 
+                        canId, 
+                        formula.byteIndex, 
+                        formula.offset, 
+                        formula.precision
+                    );
+                    
+                    // 跳转到表格中第一条匹配的行
+                    if (formula.results.length > 0) {
+                        scrollToTableRow(formula.results[0].messageNumber);
+                    }
+                }
+                
+                // 更新左侧滑窗自动识别的字段
+                updateAutoDetectedFields();
+            });
+            
+            // 删除解析结果按钮事件
+            deleteFormulaResultBtn.addEventListener('click', deleteFormulaResult);
+            
+            // 跳转到表格中指定消息编号的行
+            function scrollToTableRow(messageNumber) {
+                // 获取表格中的所有行
+                const rows = dataTableBody.querySelectorAll('tr');
+                
+                // 查找匹配消息编号的行
+                for (let i = 0; i < rows.length; i++) {
+                    const row = rows[i];
+                    const cellMessageNumber = parseInt(row.cells[0].textContent);
+                    
+                    if (cellMessageNumber === messageNumber) {
+                        // 高亮显示该行
+                        row.classList.add('bg-yellow-100', 'dark:bg-yellow-900');
+                        
+                        // 滚动到该行
+                        row.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                        
+                        // 3秒后移除高亮
+                        setTimeout(() => {
+                            row.classList.remove('bg-yellow-100', 'dark:bg-yellow-900');
+                        }, 3000);
+                        
+                        return;
+                    }
+                }
+                
+                // 如果没有找到匹配的行，显示提示
+                showNotification('未找到对应的数据行', 'warning');
+            }
+            
+
+
+            // 分页相关
+            prevPage.addEventListener('click', goToPrevPage);
+            nextPage.addEventListener('click', goToNextPage);
+
+            // 可视化相关
+            visualizationType.addEventListener('change', updateVisualization);
+            dataField.addEventListener('change', updateVisualization);
+
+            // 导出相关
+            exportCSV.addEventListener('click', exportToCSV);
+            exportJSON.addEventListener('click', exportToJSON);
+            exportChart.addEventListener('click', exportChartAsImage);
+        }
+
+        // 文件处理函数
+        function handleFileSelect(event) {
+            const file = event.target.files[0];
+            if (file) {
+                processFile(file);
+            }
+        }
+
+        function handleDragOver(event) {
+            event.preventDefault();
+            fileDropArea.classList.add('file-drop-active');
+        }
+
+        function handleDragLeave() {
+            fileDropArea.classList.remove('file-drop-active');
+        }
+
+        function handleDrop(event) {
+            event.preventDefault();
+            fileDropArea.classList.remove('file-drop-active');
+            const file = event.dataTransfer.files[0];
+            if (file) {
+                processFile(file);
+            }
+        }
+
+        function processFile(file) {
+            if (file.name.endsWith('.trc')) {
+                currentFile = file;
+                fileInfo.textContent = `已选择文件: ${file.name} (${formatFileSize(file.size)})`;
+                parseButton.disabled = false;
+                clearButton.disabled = false;
+                showNotification('文件已选择，点击解析按钮开始处理', 'success');
+            } else {
+                showNotification('请选择.trc格式的文件', 'error');
+                fileInfo.textContent = '';
+                parseButton.disabled = true;
+                clearButton.disabled = true;
+                currentFile = null;
+            }
+        }
+
+        function parseFile() {
+            if (!currentFile) return;
+
+            // 根据文件大小决定是否显示进度条
+            const showProgress = currentFile.size > 1024 * 1024; // 大于1MB显示进度
+            showLoading('正在解析文件...', showProgress);
+            
+            const reader = new FileReader();
+            reader.onload = async function(event) {
+                try {
+                    const content = event.target.result;
+                    // parseTRCFile现在总是返回Promise
+                    canData = await parseTRCFile(content, showProgress ? updateProgress : null);
+                    filteredData = [...canData];
+                    currentPage = 1;
+                    
+                    // 重置计算结果列数据
+                    calculatedColumns = {};
+                    
+                    // 清理左侧滑窗自动识别的字段
+                    const autoDetectedFields = document.getElementById('autoDetectedFields');
+                    if (autoDetectedFields) {
+                        autoDetectedFields.innerHTML = '<p class="text-sm text-gray-500 dark:text-gray-400">暂无解析结果</p>';
+                    }
+                    
+                    // 清理公式结果下拉框
+                    const formulaResultSelect = document.getElementById('formulaResultSelect');
+                    if (formulaResultSelect) {
+                        formulaResultSelect.innerHTML = '<option value="">请选择</option>';
+                    }
+                    
+                    // 清理公式结果内容
+                    const formulaResultContent = document.getElementById('formulaResultContent');
+                    if (formulaResultContent) {
+                        formulaResultContent.innerHTML = '<p class="text-sm text-gray-500 dark:text-gray-400">请先应用公式解析数据</p>';
+                    }
+                    
+                    updateStatistics();
+                    renderTable();
+                    updatePagination();
+                    // updateVisualization(); // 注释掉可视化功能以减少处理负载
+                    
+                    // 填充CAN报文标识符分类下拉框
+                    populateCanIdCategory();
+                    
+                    // 显示各个功能区域
+                    filterSection.classList.remove('hidden');
+                    dataTableSection.classList.remove('hidden');
+                    // visualizationSection.classList.remove('hidden'); // 注释掉可视化区域
+                    exportSection.classList.remove('hidden'); // 显示导出区域
+                    
+                    showNotification('文件解析成功', 'success');
+                } catch (error) {
+                    console.error('解析文件出错:', error);
+                    showNotification(`解析文件出错: ${error.message}`, 'error');
+                } finally {
+                    hideLoading();
+                }
+            };
+            reader.readAsText(currentFile);
+        }
+
+        function parseTRCFile(content, progressCallback = null) {
+            // 使用分块处理避免堆栈溢出
+            const chunkSize = 5000; // 减小块大小以降低内存压力
+            const lines = content.split('\n');
+            const data = [];
+            
+            // 使用迭代而非递归处理大文件
+            return new Promise((resolve) => {
+                let chunkStart = 0;
+                
+                function processNextChunk() {
+                    if (chunkStart >= lines.length) {
+                        // 处理完成
+                        if (progressCallback) {
+                            progressCallback(100);
+                        }
+                        resolve(data);
+                        return;
+                    }
+                    
+                    const chunkEnd = Math.min(chunkStart + chunkSize, lines.length);
+                    const chunk = lines.slice(chunkStart, chunkEnd);
+                    
+                    // 处理当前块
+                    for (let i = 0; i < chunk.length; i++) {
+                        const line = chunk[i].trim();
+                        
+                        // 跳过注释行
+                        if (line.startsWith(';') || line.startsWith('#') || line === '') {
+                            continue;
+                        }
+                        
+                        // 匹配数据行格式
+                        // 例如: 1)        20.427 1  Rx    18FFC13A -  8    03 4E 4E 08 00 01 00 00 
+                        const match = line.match(/^(\d+)\)\s+([\d.]+)\s+(\d+)\s+(Rx|Tx)\s+([0-9A-Fa-f]+)\s+-\s+(\d+)\s+([0-9A-Fa-f\s]+)$/);
+                        
+                        if (match) {
+                            const [, messageNumber, timeOffset, bus, type, id, dlc, dataBytesStr] = match;
+                            const dataBytes = dataBytesStr.trim().split(/\s+/).map(byte => parseInt(byte, 16));
+                            
+                            data.push({
+                                messageNumber: parseInt(messageNumber),
+                                timeOffset: parseFloat(timeOffset),
+                                bus: parseInt(bus),
+                                type,
+                                id: id.toUpperCase(),
+                                dlc: parseInt(dlc),
+                                dataBytes
+                            });
+                        }
+                    }
+                    
+                    // 更新进度
+                    if (progressCallback) {
+                        const progress = Math.min(100, Math.floor((chunkEnd / lines.length) * 100));
+                        progressCallback(progress);
+                    }
+                    
+                    // 更新下一个块的起始位置
+                    chunkStart = chunkEnd;
+                    
+                    // 使用setTimeout释放主线程，避免阻塞UI
+                    setTimeout(processNextChunk, 0);
+                }
+                
+                // 开始处理第一个块
+                processNextChunk();
+            });
+        }
+        
+        // 辅助函数：处理TRC文件的一个块
+        function parseTRCFileChunk(content, progressCallback = null) {
+            const lines = content.split('\n');
+            const data = [];
+            
+            for (let i = 0; i < lines.length; i++) {
+                const line = lines[i].trim();
+                
+                // 跳过注释行
+                if (line.startsWith(';') || line.startsWith('#') || line === '') {
+                    continue;
+                }
+                
+                // 匹配数据行格式
+                const match = line.match(/^(\d+)\)\s+([\d.]+)\s+(\d+)\s+(Rx|Tx)\s+([0-9A-Fa-f]+)\s+-\s+(\d+)\s+([0-9A-Fa-f\s]+)$/);
+                
+                if (match) {
+                    const [, messageNumber, timeOffset, bus, type, id, dlc, dataBytesStr] = match;
+                    const dataBytes = dataBytesStr.trim().split(/\s+/).map(byte => parseInt(byte, 16));
+                    
+                    data.push({
+                        messageNumber: parseInt(messageNumber),
+                        timeOffset: parseFloat(timeOffset),
+                        bus: parseInt(bus),
+                        type,
+                        id: id.toUpperCase(),
+                        dlc: parseInt(dlc),
+                        dataBytes
+                    });
+                }
+            }
+            
+            return data;
+        }
+
+        // 表格渲染函数
+        function renderTable() {
+            const startIndex = (currentPage - 1) * rowsPerPage;
+            const endIndex = Math.min(startIndex + rowsPerPage, filteredData.length);
+            const pageData = filteredData.slice(startIndex, endIndex);
+            
+            // 清空表格
+            dataTableBody.innerHTML = '';
+            
+            if (pageData.length === 0) {
+                const emptyRow = document.createElement('tr');
+                emptyRow.innerHTML = `
+                    <td colspan="7" class="px-6 py-4 text-center text-gray-500 dark:text-gray-400">
+                        没有找到匹配的数据
+                    </td>
+                `;
+                dataTableBody.appendChild(emptyRow);
+                shownCount.textContent = '0';
+                totalCount.textContent = filteredData.length.toString();
+                return;
+            }
+            
+            // 减小每批渲染的行数以提高性能
+            const batchSize = 25;
+            let batchIndex = 0;
+            
+            function renderBatch() {
+                // 为每批创建新的文档片段
+                const fragment = document.createDocumentFragment();
+                const batchEnd = Math.min(batchIndex + batchSize, pageData.length);
+                
+                for (let i = batchIndex; i < batchEnd; i++) {
+                    const message = pageData[i];
+                    const row = document.createElement('tr');
+                    row.className = i % 2 === 0 ? 'bg-white dark:bg-gray-800' : 'bg-gray-50 dark:bg-gray-700/50';
+                    
+                    // 预先计算数据字节字符串
+                    const dataBytesStr = message.dataBytes.map(byte => byte.toString(16).padStart(2, '0').toUpperCase()).join(' ');
+                    
+                    // 使用更高效的方式构建HTML
+                    const cells = [
+                        `<td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900 dark:text-gray-100">${message.messageNumber}</td>`,
+                        `<td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">${message.timeOffset.toFixed(3)}</td>`,
+                        `<td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">${message.bus}</td>`,
+                        `<td class="px-6 py-4 whitespace-nowrap">
+                            <span class="px-2 py-1 text-xs font-semibold rounded-full ${message.type === 'Rx' ? 'bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200' : 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200'}">
+                                ${message.type}
+                            </span>
+                        </td>`,
+                        `<td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400 font-mono">${message.id}</td>`,
+                        `<td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">${message.dlc}</td>`,
+                        `<td class="px-6 py-4 text-sm text-gray-500 dark:text-gray-400 font-mono">${dataBytesStr}</td>`
+                    ];
+                    
+                    row.innerHTML = cells.join('');
+                    fragment.appendChild(row);
+                }
+                
+                // 将当前批次添加到DOM
+                dataTableBody.appendChild(fragment);
+                
+                // 更新计数
+                shownCount.textContent = Math.min(batchEnd, pageData.length).toString();
+                totalCount.textContent = filteredData.length.toString();
+                
+                // 如果还有更多行需要渲染，继续下一批
+            if (batchEnd < pageData.length) {
+                batchIndex = batchEnd;
+                // 使用setTimeout释放主线程，避免阻塞UI
+                setTimeout(renderBatch, 0);
+            } else {
+                // 所有行渲染完成后，如果有选中的CAN报文标识符且有计算结果，则更新计算结果列
+                const selectedCanId = canIdCategory.value;
+                if (selectedCanId !== 'all' && calculatedColumns[selectedCanId] && Object.keys(calculatedColumns[selectedCanId]).length > 0) {
+                    updateTableWithCalculatedData(selectedCanId);
+                }
+            }
+            }
+            
+            // 开始渲染第一批
+            renderBatch();
+        }
+
+        // 填充CAN报文标识符分类下拉框
+        function populateCanIdCategory() {
+            // 获取所有唯一的CAN报文标识符
+            const uniqueIds = [...new Set(canData.map(message => message.id))].sort();
+            
+            // 清空现有选项，保留"全部"选项
+            canIdCategory.innerHTML = '<option value="all">全部</option>';
+            
+            // 添加每个唯一的CAN报文标识符作为选项
+            uniqueIds.forEach(id => {
+                const option = document.createElement('option');
+                option.value = id;
+                option.textContent = id;
+                canIdCategory.appendChild(option);
+            });
+        }
+        
+        // 过滤函数
+        function applyFilter() {
+            const typeFilter = messageTypeFilter.value;
+            const canIdFilter = canIdCategory.value;
+            
+            filteredData = canData.filter(message => {
+                const typeMatch = typeFilter === 'all' || message.type === typeFilter;
+                const canIdMatch = canIdFilter === 'all' || message.id === canIdFilter;
+                return typeMatch && canIdMatch;
+            });
+            
+            currentPage = 1;
+            updateStatistics();
+            renderTable();
+            updatePagination();
+            // updateVisualization(); // 注释掉可视化功能以减少处理负载
+            
+            // 如果选择了特定的CAN报文标识符，自动更新公式解析的CAN报文标识符
+            if (canIdFilter !== 'all') {
+                formulaCanId.value = canIdFilter;
+                
+                // 在表格渲染完成后，会自动调用updateTableWithCalculatedData更新计算结果列
+            } else {
+                // 如果选择了"全部"，移除计算结果列
+                document.querySelectorAll('.calculated-column').forEach(el => {
+                    el.remove();
+                });
+            }
+            
+            showNotification(`筛选结果: ${filteredData.length} 条消息`, 'info');
+        }
+
+        function resetFilter() {
+            messageTypeFilter.value = 'all';
+            canIdCategory.value = 'all';
+            filteredData = [...canData];
+            currentPage = 1;
+            updateStatistics();
+            renderTable();
+            updatePagination();
+            // updateVisualization(); // 注释掉可视化功能以减少处理负载
+            
+            // 移除计算结果列
+            document.querySelectorAll('.calculated-column').forEach(el => {
+                el.remove();
+            });
+            
+            showNotification('筛选条件已重置', 'info');
+        }
+
+        // 分页函数
+        function updatePagination() {
+            const totalPages = Math.ceil(filteredData.length / rowsPerPage);
+            prevPage.disabled = currentPage === 1;
+            nextPage.disabled = currentPage === totalPages || totalPages === 0;
+        }
+
+        function goToPrevPage() {
+            if (currentPage > 1) {
+                currentPage--;
+                renderTable();
+                updatePagination();
+                
+                // 如果有选中的CAN报文标识符且有计算结果，更新计算结果列
+                const selectedCanId = canIdCategory.value;
+                if (selectedCanId !== 'all' && calculatedColumns[selectedCanId] && Object.keys(calculatedColumns[selectedCanId]).length > 0) {
+                    updateTableWithCalculatedData(selectedCanId);
+                }
+            }
+        }
+
+        function goToNextPage() {
+            const totalPages = Math.ceil(filteredData.length / rowsPerPage);
+            if (currentPage < totalPages) {
+                currentPage++;
+                renderTable();
+                updatePagination();
+                
+                // 如果有选中的CAN报文标识符且有计算结果，更新计算结果列
+                const selectedCanId = canIdCategory.value;
+                if (selectedCanId !== 'all' && calculatedColumns[selectedCanId] && Object.keys(calculatedColumns[selectedCanId]).length > 0) {
+                    updateTableWithCalculatedData(selectedCanId);
+                }
+            }
+        }
+
+        // 统计函数
+        function updateStatistics() {
+            totalMessages.textContent = filteredData.length.toString();
+            rxMessages.textContent = filteredData.filter(m => m.type === 'Rx').length.toString();
+            txMessages.textContent = filteredData.filter(m => m.type === 'Tx').length.toString();
+        }
+
+        // 自定义公式解析函数
+        function applyCustomFormula() {
+            const canId = formulaCanId.value.trim().toUpperCase();
+            const byteIndex = parseInt(formulaByteIndex.value);
+            const offset = parseFloat(formulaOffset.value);
+            const precision = parseFloat(formulaPrecision.value);
+            const description = formulaDescription.value.trim();
+            
+            // 验证输入
+            if (!canId) {
+                showNotification('请输入CAN报文标识符', 'error');
+                return;
+            }
+            
+            if (isNaN(byteIndex) || byteIndex < 0 || byteIndex > 7) {
+                showNotification('请输入有效的数据字节位置 (0-7)', 'error');
+                return;
+            }
+            
+            if (isNaN(offset)) {
+                showNotification('请输入有效的偏置值', 'error');
+                return;
+            }
+            
+            if (isNaN(precision) || precision === 0) {
+                showNotification('请输入有效的精度值 (不能为0)', 'error');
+                return;
+            }
+            
+            // 如果是位选择模式，验证是否选择了位
+            if (isBitSelectionMode && selectedBits.length === 0) {
+                showNotification('请至少选择一个位', 'error');
+                return;
+            }
+            
+            // 查找匹配的CAN报文
+            const matchedMessages = canData.filter(message => message.id === canId);
+            
+            if (matchedMessages.length === 0) {
+                showNotification(`未找到标识符为 ${canId} 的CAN报文`, 'error');
+                return;
+            }
+            
+            // 解析结果
+            const results = [];
+            
+            if (isBitSelectionMode) {
+                // 位选择模式 - 处理64位报文
+                // 计算掩码
+                let mask = 0n; // 使用BigInt处理64位
+                selectedBits.forEach(bit => {
+                    mask |= (1n << BigInt(bit));
+                });
+                
+                matchedMessages.forEach(message => {
+                    // 创建64位二进制数组
+                    const bitArray = new Array(64).fill(0);
+                    
+                    // 将每个字节转换为8位二进制，并填充到bitArray中
+                    for (let byteIndex = 0; byteIndex < 8 && byteIndex < message.dataBytes.length; byteIndex++) {
+                        const byteValue = message.dataBytes[byteIndex];
+                        
+                        // 将字节转换为8位二进制
+                        for (let bitInByte = 0; bitInByte < 8; bitInByte++) {
+                            // 计算在64位数组中的位置（字节0的位0是数组的第0位，字节0的位7是数组的第7位，字节1的位0是数组的第8位，以此类推）
+                            const bitPosition = byteIndex * 8 + bitInByte;
+                            
+                            // 获取字节的特定位的值（0或1）
+                            const bitValue = (byteValue >> (7 - bitInByte)) & 1;
+                            
+                            // 将位值存入数组
+                            bitArray[bitPosition] = bitValue;
+                        }
+                    }
+                    
+                    // 根据选中的位，从bitArray中提取值并转换为十进制
+                    let selectedBitValue = 0;
+                    
+                    // 始终按照用户选择的顺序确定权重，第一个选择的位作为最高位，最后一个选择的位作为最低位
+                    selectedBits.forEach((bit, index) => {
+                        selectedBitValue += bitArray[bit] * Math.pow(2, selectedBits.length - 1 - index);
+                    });
+                    
+                    // 应用偏置和精度计算最终结果
+                    const parsedValue = (selectedBitValue + offset) * precision;
+                    
+                    results.push({
+                        messageNumber: message.messageNumber,
+                        timeOffset: message.timeOffset,
+                        bit64Value: selectedBitValue,
+                        bitValue: selectedBitValue,
+                        parsedValue: parsedValue,
+                        selectedBits: [...selectedBits],
+                        mask: Number(mask)
+                    });
+                });
+            } else {
+                // 字节模式
+                matchedMessages.forEach(message => {
+                    if (byteIndex < message.dataBytes.length) {
+                        const byteValue = message.dataBytes[byteIndex];
+                        const parsedValue = (byteValue + offset) * precision;
+                        
+                        results.push({
+                            messageNumber: message.messageNumber,
+                            timeOffset: message.timeOffset,
+                            byteValue: byteValue,
+                            parsedValue: parsedValue
+                        });
+                    }
+                });
+            }
+            
+            if (results.length === 0) {
+                if (isBitSelectionMode) {
+                    showNotification(`未找到标识符为 ${canId} 的有效数据`, 'error');
+                } else {
+                    showNotification(`未找到标识符为 ${canId} 且包含第 ${byteIndex} 字节的有效数据`, 'error');
+                }
+                return;
+            }
+            
+            // 显示结果
+            displayFormulaResults(results, description, canId, byteIndex, offset, precision);
+            
+            // 保存解析结果
+            if (!calculatedColumns[canId]) {
+                calculatedColumns[canId] = {};
+            }
+            
+            // 使用用户填入的解析结果描述字段作为关键字段
+            const formulaKey = description;
+            
+            // 检查是否已存在相同描述的解析结果，如果存在则覆盖
+            if (calculatedColumns[canId][formulaKey]) {
+                showNotification(`已覆盖描述为 "${description}" 的解析结果`, 'info');
+            }
+            
+            calculatedColumns[canId][formulaKey] = {
+                description,
+                byteIndex,
+                offset,
+                precision,
+                results,
+                isBitSelectionMode: isBitSelectionMode,
+                selectedBits: isBitSelectionMode ? [...selectedBits] : null
+            };
+            
+            // 显示解析结果容器
+            showFormulaResultContainer();
+            
+            // 更新表格中的计算结果列
+            updateTableWithCalculatedData(canId);
+            
+
+            
+            // 更新左侧滑窗自动识别的字段
+            updateAutoDetectedFields();
+            
+            showNotification(`成功解析 ${results.length} 条数据`, 'success');
+        }
+        
+        function resetCustomFormula() {
+            formulaCanId.value = '';
+            formulaByteIndex.value = '0';
+            formulaOffset.value = '0';
+            formulaPrecision.value = '1';
+            formulaDescription.value = '';
+            // 折叠侧边栏
+            formulaResultSidebar.style.width = '50px';
+            sidebarCollapsed.classList.remove('hidden');
+            sidebarExpanded.classList.add('hidden');
+        }
+        
+        // 初始化位矩阵
+        function initializeBitMatrix() {
+            // 清空位矩阵
+            bitMatrix.innerHTML = '';
+            selectedBits = [];
+            
+            // 创建8x8的位矩阵，使用网格布局
+            for (let i = 0; i < 8; i++) {
+                for (let j = 0; j < 8; j++) {
+                    const bitIndex = i * 8 + j;
+                    const bitCell = document.createElement('div');
+                    bitCell.className = 'w-8 h-8 flex items-center justify-center border border-gray-300 rounded cursor-pointer hover:bg-gray-100';
+                    bitCell.textContent = bitIndex.toString();
+                    bitCell.dataset.bitIndex = bitIndex.toString();
+                    bitCell.title = `位${bitIndex} (字节${i}, 位${j})`;
+                    
+                    // 添加点击事件
+                    bitCell.addEventListener('click', function() {
+                        toggleBitSelection(bitIndex, this);
+                    });
+                    
+                    bitMatrix.appendChild(bitCell);
+                }
+            }
+            
+            updateSelectedBitsInfo();
+        }
+        
+        // 更新位矩阵
+        function updateBitMatrix() {
+            // 清空位矩阵
+            bitMatrix.innerHTML = '';
+            selectedBits = [];
+            
+            // 创建8x8的位矩阵，使用网格布局
+            for (let i = 0; i < 8; i++) {
+                for (let j = 0; j < 8; j++) {
+                    const bitIndex = i * 8 + j;
+                    const bitCell = document.createElement('div');
+                    bitCell.className = 'w-8 h-8 flex items-center justify-center border border-gray-300 rounded cursor-pointer hover:bg-gray-100';
+                    bitCell.textContent = bitIndex.toString();
+                    bitCell.dataset.bitIndex = bitIndex.toString();
+                    bitCell.title = `位${bitIndex} (字节${i}, 位${j})`;
+                    
+                    // 添加点击事件
+                    bitCell.addEventListener('click', function() {
+                        toggleBitSelection(bitIndex, this);
+                    });
+                    
+                    bitMatrix.appendChild(bitCell);
+                }
+            }
+            
+            updateSelectedBitsInfo();
+        }
+        
+        // 切换位选择状态
+        function toggleBitSelection(bitIndex, element) {
+            const index = selectedBits.indexOf(bitIndex);
+            
+            if (index > -1) {
+                // 如果已选中，则取消选中
+                selectedBits.splice(index, 1);
+                element.classList.remove('bg-primary', 'text-white');
+                element.classList.add('bg-white', 'text-gray-700');
+            } else {
+                // 如果未选中，则选中
+                selectedBits.push(bitIndex);
+                element.classList.add('bg-primary', 'text-white');
+                element.classList.remove('bg-white', 'text-gray-700');
+            }
+            
+            // 不再排序，保持用户选择的顺序
+            // selectedBits.sort((a, b) => a - b);
+            
+            updateSelectedBitsInfo();
+        }
+        
+        // 更新选中位信息显示
+        function updateSelectedBitsInfo() {
+            if (selectedBits.length === 0) {
+                selectedBitsInfo.textContent = '未选择任何位';
+            } else {
+                // 计算选中的位的值范围
+                const minValue = Math.min(...selectedBits);
+                const maxValue = Math.max(...selectedBits);
+                
+                // 计算掩码
+                let mask = 0n; // 使用BigInt处理64位
+                selectedBits.forEach(bit => {
+                    mask |= (1n << BigInt(bit));
+                });
+                
+                // 格式化选中位信息，显示位和字节
+                const bitDetails = selectedBits.map(bit => {
+                    const byteIndex = Math.floor(bit / 8);
+                    const bitInByte = bit % 8;
+                    return `${bit}(字节${byteIndex},位${bitInByte})`;
+                }).join(', ');
+                
+                selectedBitsInfo.innerHTML = `选中位: [${bitDetails}]<br>掩码: 0x${mask.toString(16).toUpperCase().padStart(16, '0')}`;
+            }
+        }
+        
+        // 显示解析结果容器
+        function showFormulaResultContainer() {
+            // 展开侧边栏
+            formulaResultSidebar.style.width = '33.333333%';
+            sidebarCollapsed.classList.add('hidden');
+            sidebarExpanded.classList.remove('hidden');
+            
+            // 重置分页状态
+            currentResultPage = 1;
+            
+            // 清空下拉框选项
+            formulaResultSelect.innerHTML = '<option value="">请选择</option>';
+            
+            // 添加所有解析结果选项
+            for (const canId in calculatedColumns) {
+                for (const formulaKey in calculatedColumns[canId]) {
+                    const formula = calculatedColumns[canId][formulaKey];
+                    const option = document.createElement('option');
+                    
+                    // 为位模式字段创建唯一标识符，包含字节索引和位信息
+                    let uniqueKey = formulaKey;
+                    if (formula.isBitSelectionMode && formula.selectedBits) {
+                        uniqueKey = `${formulaKey}_bits_${formula.selectedBits.join('_')}`;
+                    }
+                    
+                    option.value = `${canId}_${uniqueKey}`;
+                    
+                    // 添加位模式信息到选项文本中
+                    let optionText = `${formula.description} (ID: ${canId})`;
+                    if (formula.isBitSelectionMode && formula.selectedBits) {
+                        optionText += ` [位: ${formula.selectedBits.join(', ')}]`;
+                    }
+                    
+                    option.textContent = optionText;
+                    
+                    // 存储原始formulaKey以便后续查找
+                    option.dataset.originalKey = formulaKey;
+                    option.dataset.canId = canId;
+                    
+                    formulaResultSelect.appendChild(option);
+                }
+            }
+            
+            // 如果有解析结果，自动选择第一个
+            if (formulaResultSelect.options.length > 1) {
+                formulaResultSelect.selectedIndex = 1;
+                formulaResultSelect.dispatchEvent(new Event('change'));
+            }
+        }
+        
+        // 删除解析结果
+        function deleteFormulaResult() {
+            const selectedOption = formulaResultSelect.options[formulaResultSelect.selectedIndex];
+            
+            if (!selectedOption || selectedOption.value === '') {
+                showNotification('请先选择要删除的解析结果', 'error');
+                return;
+            }
+            
+            const canId = selectedOption.dataset.canId;
+            const formulaKey = selectedOption.dataset.originalKey;
+            
+            if (!canId || !formulaKey || !calculatedColumns[canId] || !calculatedColumns[canId][formulaKey]) {
+                showNotification('找不到要删除的解析结果', 'error');
+                return;
+            }
+            
+            // 删除解析结果
+            delete calculatedColumns[canId][formulaKey];
+            
+            // 如果该CAN ID下没有其他解析结果，删除整个CAN ID条目
+            if (Object.keys(calculatedColumns[canId]).length === 0) {
+                delete calculatedColumns[canId];
+            }
+            
+            // 重新显示解析结果容器，刷新下拉框
+            showFormulaResultContainer();
+            
+            // 更新左侧滑窗的关键字段
+            updateAutoDetectedFields();
+            
+            // 清除解析结果表格
+            formulaResultContent.innerHTML = '';
+            formulaResultDetails.innerHTML = '';
+            
+            // 更新表格中的计算结果列
+            const selectedCanId = canIdCategory.value;
+            if (selectedCanId !== 'all') {
+                // 如果当前显示的是被删除的CAN ID，或者该CAN ID下没有解析结果了，也要更新表格
+                if (selectedCanId === canId || !calculatedColumns[selectedCanId]) {
+                    // 更新分类表格
+                    updateTableWithCalculatedData(selectedCanId);
+                    // 触发自定义事件通知分类表格需要更新
+                    const event = new CustomEvent('canCategoryTableUpdate', { detail: { action: 'refresh', canId: selectedCanId } });
+                    document.dispatchEvent(event);
+                } else {
+                    // 如果当前显示的是其他CAN ID，也要更新表格以确保显示最新状态
+                    updateTableWithCalculatedData(selectedCanId);
+                    // 触发自定义事件通知分类表格需要更新
+                    const event = new CustomEvent('canCategoryTableUpdate', { detail: { action: 'refresh', canId: selectedCanId } });
+                    document.dispatchEvent(event);
+                }
+            } else {
+                // 如果当前显示的是所有CAN ID，需要完全重新渲染表格
+                // 1. 先移除所有计算结果列
+                document.querySelectorAll('.calculated-column').forEach(el => {
+                    el.remove();
+                });
+                
+                // 2. 触发自定义事件通知所有分类表格需要更新
+                const event = new CustomEvent('canCategoryTableUpdate', { detail: { action: 'refreshAll' } });
+                document.dispatchEvent(event);
+                
+                // 3. 重新应用过滤条件，这会重新渲染表格并更新所有数据
+                applyFilter();
+            }
+            
+            showNotification('解析结果已删除', 'success');
+        }
+        
+
+        
+
+        
+
+        
+        // 更新表格中的计算结果列
+        function updateTableWithCalculatedData(canId) {
+            if (!calculatedColumns[canId] || Object.keys(calculatedColumns[canId]).length === 0) {
+                // 移除所有计算结果列
+                document.querySelectorAll('.calculated-column').forEach(el => {
+                    el.remove();
+                });
+                return;
+            }
+            
+            // 获取表头行
+            const headerRow = document.querySelector('thead tr');
+            
+            // 移除现有的计算结果列
+            document.querySelectorAll('.calculated-column').forEach(el => {
+                el.remove();
+            });
+            
+            // 获取所有解析结果
+            const formulas = calculatedColumns[canId];
+            
+            // 为每个解析结果添加列
+            Object.entries(formulas).forEach(([key, formula]) => {
+                // 添加表头
+                const headerCell = document.createElement('th');
+                headerCell.className = 'px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider calculated-column';
+                headerCell.textContent = formula.description || `数据字节 ${formula.byteIndex}`;
+                headerCell.dataset.formulaKey = key;
+                headerRow.appendChild(headerCell);
+                
+                // 为每行数据添加单元格
+                const rows = dataTableBody.querySelectorAll('tr');
+                rows.forEach(row => {
+                    const cell = document.createElement('td');
+                    cell.className = 'px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400 calculated-column';
+                    cell.dataset.formulaKey = key;
+                    
+                    // 获取消息编号
+                    const messageNumber = parseInt(row.cells[0].textContent);
+                    
+                    // 查找对应的计算结果
+                    const result = formula.results.find(r => r.messageNumber === messageNumber);
+                    
+                    if (result) {
+                        // 检查是否为位选择模式的结果
+                        if (formula.isBitSelectionMode && result.hasOwnProperty('bitValue')) {
+                            cell.textContent = `${result.parsedValue.toFixed(2)} (${result.bitValue})`;
+                            cell.title = `描述: ${formula.description}, 位值: ${result.bitValue}, 掩码: 0x${result.mask.toString(16).toUpperCase().padStart(2, '0')}`;
+                        } else {
+                            cell.textContent = result.parsedValue.toFixed(2);
+                            cell.title = `描述: ${formula.description}`;
+                        }
+                    } else {
+                        cell.textContent = '-';
+                    }
+                    
+                    row.appendChild(cell);
+                });
+            });
+        }
+        
+        function displayFormulaResults(results, description, canId, byteIndex, offset, precision) {
+            // 保存当前结果信息，用于分页
+            currentResults = results;
+            currentDescription = description;
+            currentCanId = canId;
+            currentByteIndex = byteIndex;
+            currentOffset = offset;
+            currentPrecision = precision;
+            
+            // 计算分页信息
+            const totalPages = Math.ceil(results.length / resultRowsPerPage);
+            const startIndex = (currentResultPage - 1) * resultRowsPerPage;
+            const endIndex = Math.min(startIndex + resultRowsPerPage, results.length);
+            const pageResults = results.slice(startIndex, endIndex);
+            
+            // 检查是否为位选择模式的结果
+            const isBitModeResult = results.length > 0 && results[0].hasOwnProperty('bitValue');
+            
+            // 创建结果表格
+            let html = `
+                <div class="mb-2">
+                    <h4 class="text-md font-semibold mb-1">${description}</h4>
+                    <p class="text-xs text-gray-600 dark:text-gray-400 mb-1">
+                        ID: ${canId} | 字节: ${byteIndex} | 偏置: ${offset} | 精度: ${precision}
+            `;
+            
+            // 如果是位选择模式，添加位选择信息
+            if (isBitModeResult) {
+                const selectedBits = results[0].selectedBits;
+                const mask = results[0].mask;
+                html += ` | 选中位: [${selectedBits.join(', ')}] | 掩码: 0x${mask.toString(16).toUpperCase().padStart(2, '0')}`;
+            }
+            
+            html += `
+                    </p>
+                </div>
+                <div class="overflow-x-auto max-h-96">
+                    <table class="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
+                        <thead class="bg-gray-50 dark:bg-gray-700 sticky top-0">
+                            <tr>
+                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">序号</th>
+                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">时间</th>
+            `;
+            
+            // 根据模式添加不同的列标题
+            if (isBitModeResult) {
+                html += `
+                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">位值</th>
+                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">结果</th>
+                `;
+            } else {
+                html += `
+                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">原始值</th>
+                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">结果</th>
+                `;
+            }
+            
+            html += `
+                            </tr>
+                        </thead>
+                        <tbody class="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
+            `;
+            
+            // 添加当前页的结果行
+            pageResults.forEach(result => {
+                html += `
+                    <tr class="hover:bg-gray-100 dark:hover:bg-gray-700 cursor-pointer" onclick="scrollToTableRow(${result.messageNumber})">
+                        <td class="px-6 py-3 whitespace-nowrap text-sm text-gray-900 dark:text-gray-100">${result.messageNumber}</td>
+                        <td class="px-6 py-3 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">${result.timeOffset.toFixed(3)}</td>
+                `;
+                
+                // 根据模式添加不同的单元格内容
+                if (isBitModeResult) {
+                    html += `
+                        <td class="px-6 py-3 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">${result.bitValue}</td>
+                        <td class="px-6 py-3 whitespace-nowrap text-sm font-medium text-gray-900 dark:text-gray-100">${result.parsedValue.toFixed(2)}</td>
+                    `;
+                } else {
+                    html += `
+                        <td class="px-6 py-3 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">${result.byteValue}</td>
+                        <td class="px-6 py-3 whitespace-nowrap text-sm font-medium text-gray-900 dark:text-gray-100">${result.parsedValue.toFixed(2)}</td>
+                    `;
+                }
+                
+                html += `
+                    </tr>
+                `;
+            });
+            
+            html += `
+                        </tbody>
+                    </table>
+                </div>
+                <p class="text-sm text-gray-500 dark:text-gray-400 mt-2">共${results.length}条数据</p>
+            `;
+            
+            formulaResultContent.innerHTML = html;
+            
+            // 更新分页状态
+            if (results.length > resultRowsPerPage) {
+                resultPagination.classList.remove('hidden');
+                resultShownCount.textContent = pageResults.length.toString();
+                resultTotalCount.textContent = results.length.toString();
+                resultTotalPages.textContent = `/ ${totalPages}`;
+                resultPageInput.value = currentResultPage.toString();
+                resultPageInput.max = totalPages.toString();
+                resultPrevPage.disabled = currentResultPage === 1;
+                resultNextPage.disabled = currentResultPage === totalPages;
+            } else {
+                resultPagination.classList.add('hidden');
+            }
+        }
+        
+        // 可视化函数 - 已注释以减少处理负载
+        function updateVisualization() {
+            // 注释掉可视化功能以减少处理负载
+            /*
+            const ctx = document.getElementById('visualizationChart').getContext('2d');
+            const type = visualizationType.value;
+            
+            // 销毁现有图表
+            if (visualizationChart) {
+                visualizationChart.destroy();
+            }
+            
+            // 根据可视化类型显示/隐藏数据字段选择器
+            if (type === 'dataValues') {
+                dataFieldSelector.classList.remove('hidden');
+            } else {
+                dataFieldSelector.classList.add('hidden');
+            }
+            
+            // 创建新图表
+            switch (type) {
+                case 'messageRate':
+                    visualizationChart = createMessageRateChart(ctx);
+                    break;
+                case 'idDistribution':
+                    visualizationChart = createIdDistributionChart(ctx);
+                    break;
+                case 'dataValues':
+                    visualizationChart = createDataValuesChart(ctx);
+                    break;
+            }
+            */
+        }
+
+        function createMessageRateChart(ctx) {
+            // 将时间分割为区间，计算每个区间的消息数量
+            // 根据数据量动态调整时间区间大小
+            const timeInterval = filteredData.length > 10000 ? 5000 : 1000; // 大数据量使用5秒区间
+            const maxTime = Math.max(...filteredData.map(m => m.timeOffset));
+            const intervals = Math.ceil(maxTime / timeInterval);
+            
+            // 限制最大区间数以避免性能问题
+            const maxIntervals = 200;
+            const actualIntervals = Math.min(intervals, maxIntervals);
+            const intervalSize = Math.ceil(intervals / actualIntervals);
+            
+            const labels = [];
+            const rxData = new Array(actualIntervals).fill(0);
+            const txData = new Array(actualIntervals).fill(0);
+            
+            // 初始化标签
+            for (let i = 0; i < actualIntervals; i++) {
+                labels.push(`${i * timeInterval * intervalSize}ms`);
+            }
+            
+            // 统计每个区间的消息数量
+            filteredData.forEach(message => {
+                const rawIntervalIndex = Math.floor(message.timeOffset / timeInterval);
+                const intervalIndex = Math.min(Math.floor(rawIntervalIndex / intervalSize), actualIntervals - 1);
+                
+                if (message.type === 'Rx') {
+                    rxData[intervalIndex]++;
+                } else {
+                    txData[intervalIndex]++;
+                }
+            });
+            
+            // 只保留有数据的区间
+            const nonEmptyIntervals = labels.map((label, index) => 
+                rxData[index] > 0 || txData[index] > 0
+            );
+            
+            const filteredLabels = labels.filter((_, index) => nonEmptyIntervals[index]);
+            const filteredRxData = rxData.filter((_, index) => nonEmptyIntervals[index]);
+            const filteredTxData = txData.filter((_, index) => nonEmptyIntervals[index]);
+            
+            return new Chart(ctx, {
+                type: 'bar',
+                data: {
+                    labels: filteredLabels,
+                    datasets: [
+                        {
+                            label: '接收消息 (Rx)',
+                            data: filteredRxData,
+                            backgroundColor: 'rgba(59, 130, 246, 0.6)',
+                            borderColor: 'rgba(59, 130, 246, 1)',
+                            borderWidth: 1
+                        },
+                        {
+                            label: '发送消息 (Tx)',
+                            data: filteredTxData,
+                            backgroundColor: 'rgba(16, 185, 129, 0.6)',
+                            borderColor: 'rgba(16, 185, 129, 1)',
+                            borderWidth: 1
+                        }
+                    ]
+                },
+                options: {
+                    ...getChartOptions('消息速率 (每秒消息数)', '消息数量'),
+                    animation: {
+                        duration: filteredData.length > 5000 ? 0 : 1000 // 数据量大时禁用动画
+                    }
+                }
+            });
+        }
+
+        function createIdDistributionChart(ctx) {
+            // 统计每个ID的消息数量
+            const idCounts = {};
+            filteredData.forEach(message => {
+                idCounts[message.id] = (idCounts[message.id] || 0) + 1;
+            });
+            
+            // 转换为数组并排序
+            const idArray = Object.entries(idCounts)
+                .map(([id, count]) => ({ id, count }))
+                .sort((a, b) => b.count - a.count)
+                .slice(0, 20); // 只显示前20个ID
+            
+            const labels = idArray.map(item => item.id);
+            const data = idArray.map(item => item.count);
+            
+            // 生成颜色
+            const backgroundColors = idArray.map((_, index) => 
+                `hsl(${index * 137 % 360}, 70%, 60%)`
+            );
+            
+            return new Chart(ctx, {
+                type: 'pie',
+                data: {
+                    labels: labels,
+                    datasets: [{
+                        data: data,
+                        backgroundColor: backgroundColors,
+                        borderWidth: 1
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    animation: {
+                        duration: filteredData.length > 5000 ? 0 : 1000 // 数据量大时禁用动画
+                    },
+                    plugins: {
+                        title: {
+                            display: true,
+                            text: '消息ID分布',
+                            font: {
+                                size: 16
+                            }
+                        },
+                        legend: {
+                            position: 'right',
+                            labels: {
+                                boxWidth: 12,
+                                padding: 15
+                            }
+                        }
+                    }
+                }
+            });
+        }
+
+        function createDataValuesChart(ctx) {
+            const fieldIndex = parseInt(dataField.value);
+            const filteredMessages = filteredData.filter(m => m.dataBytes.length > fieldIndex);
+            
+            // 进一步限制数据点数量以提高性能
+            const maxDataPoints = 500; // 减少最大数据点数量
+            let sampledMessages = filteredMessages;
+            
+            if (filteredMessages.length > maxDataPoints) {
+                // 如果数据点太多，进行采样
+                const samplingRate = Math.ceil(filteredMessages.length / maxDataPoints);
+                sampledMessages = [];
+                
+                for (let i = 0; i < filteredMessages.length; i += samplingRate) {
+                    sampledMessages.push(filteredMessages[i]);
+                }
+                
+                // 确保包含最后一个点
+                if (sampledMessages[sampledMessages.length - 1] !== filteredMessages[filteredMessages.length - 1]) {
+                    sampledMessages.push(filteredMessages[filteredMessages.length - 1]);
+                }
+            }
+            
+            // 使用更高效的方式创建标签和数据数组
+            const labels = new Array(sampledMessages.length);
+            const data = new Array(sampledMessages.length);
+            
+            for (let i = 0; i < sampledMessages.length; i++) {
+                labels[i] = sampledMessages[i].timeOffset.toFixed(1);
+                data[i] = sampledMessages[i].dataBytes[fieldIndex];
+            }
+            
+            return new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: labels,
+                    datasets: [{
+                        label: `数据字节 ${fieldIndex} 值${filteredMessages.length > maxDataPoints ? ` (采样显示，共${filteredMessages.length}个点)` : ''}`,
+                        data: data,
+                        fill: false,
+                        borderColor: 'rgb(99, 102, 241)',
+                        tension: 0.1,
+                        pointRadius: filteredMessages.length > 50 ? 0 : 1, // 数据点多时不显示点
+                        pointHoverRadius: 5
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    animation: {
+                        duration: filteredMessages.length > 200 ? 0 : 1000 // 数据点多时禁用动画
+                    },
+                    scales: {
+                        x: {
+                            title: {
+                                display: true,
+                                text: '时间 (ms)'
+                            }
+                        },
+                        y: {
+                            title: {
+                                display: true,
+                                text: `数据字节 ${fieldIndex} 值 (十进制)`
+                            },
+                            beginAtZero: true,
+                            max: 255
+                        }
+                    },
+                    plugins: {
+                        title: {
+                            display: true,
+                            text: `数据字节 ${fieldIndex} 值随时间变化`,
+                            font: {
+                                size: 16
+                            }
+                        },
+                        tooltip: {
+                            mode: 'index',
+                            intersect: false
+                        }
+                    }
+                }
+            });
+        }
+
+        function getChartOptions(title, yLabel) {
+            return {
+                responsive: true,
+                scales: {
+                    x: {
+                        title: {
+                            display: true,
+                            text: '时间区间'
+                        }
+                    },
+                    y: {
+                        title: {
+                            display: true,
+                            text: yLabel
+                        },
+                        beginAtZero: true
+                    }
+                },
+                plugins: {
+                    title: {
+                        display: true,
+                        text: title,
+                        font: {
+                            size: 16
+                        }
+                    },
+                    legend: {
+                        position: 'top',
+                    }
+                }
+            };
+        }
+
+        // 导出函数
+        function exportToCSV() {
+            if (filteredData.length === 0) {
+                showNotification('没有可导出的数据', 'error');
+                return;
+            }
+            
+            let csvContent = '消息编号,时间偏移(ms),总线,类型,ID(十六进制),数据长度,数据字节\n';
+            
+            filteredData.forEach(message => {
+                const dataBytesStr = message.dataBytes.map(byte => byte.toString(16).padStart(2, '0').toUpperCase()).join(' ');
+                csvContent += `${message.messageNumber},${message.timeOffset.toFixed(3)},${message.bus},${message.type},${message.id},${message.dlc},"${dataBytesStr}"\n`;
+            });
+            
+            downloadFile(csvContent, 'can_data.csv', 'text/csv');
+            showNotification('数据已导出为CSV文件', 'success');
+        }
+
+        function exportToJSON() {
+            if (filteredData.length === 0) {
+                showNotification('没有可导出的数据', 'error');
+                return;
+            }
+            
+            const jsonContent = JSON.stringify(filteredData, null, 2);
+            downloadFile(jsonContent, 'can_data.json', 'application/json');
+            showNotification('数据已导出为JSON文件', 'success');
+        }
+
+        function exportToExcel() {
+            if (filteredData.length === 0) {
+                showNotification('没有可导出的数据', 'error');
+                return;
+            }
+            
+            // 创建工作簿
+            const workbook = XLSX.utils.book_new();
+            
+            // 准备主数据表格
+            const mainData = [];
+            const headers = ['消息编号', '时间偏移(ms)', '总线', '类型', 'ID(十六进制)', '数据长度', '数据字节'];
+            
+            // 添加表头
+            mainData.push(headers);
+            
+            // 添加数据行
+            filteredData.forEach(message => {
+                const dataBytesStr = message.dataBytes.map(byte => byte.toString(16).padStart(2, '0').toUpperCase()).join(' ');
+                const row = [
+                    message.messageNumber,
+                    message.timeOffset.toFixed(3),
+                    message.bus,
+                    message.type,
+                    message.id,
+                    message.dlc,
+                    dataBytesStr
+                ];
+                mainData.push(row);
+            });
+            
+            // 创建主数据工作表
+            const mainSheet = XLSX.utils.aoa_to_sheet(mainData);
+            XLSX.utils.book_append_sheet(workbook, mainSheet, 'CAN数据');
+            
+            // 添加计算结果数据（如果有）
+            if (Object.keys(calculatedColumns).length > 0) {
+                for (const [canId, formulas] of Object.entries(calculatedColumns)) {
+                    for (const [formulaName, formulaData] of Object.entries(formulas)) {
+                        if (formulaData.results && formulaData.results.length > 0) {
+                            const calcData = [];
+                            calcData.push(['消息编号', '时间偏移(ms)', 'ID(十六进制)', formulaName]);
+                            
+                            formulaData.results.forEach(result => {
+                                calcData.push([
+                                    result.messageNumber,
+                                    result.timeOffset.toFixed(3),
+                                    result.canId,
+                                    result.parsedValue
+                                ]);
+                            });
+                            
+                            // 创建计算结果工作表
+                            const calcSheet = XLSX.utils.aoa_to_sheet(calcData);
+                            // 使用简化的工作表名称，避免特殊字符
+                            const sheetName = `${canId}_${formulaName.substring(0, 20)}`;
+                            XLSX.utils.book_append_sheet(workbook, calcSheet, sheetName);
+                        }
+                    }
+                }
+            }
+            
+            // 生成Excel文件并下载
+            XLSX.writeFile(workbook, 'can_data.xlsx');
+            showNotification('数据已导出为Excel文件', 'success');
+        }
+
+        function exportChartAsImage() {
+            if (!visualizationChart) {
+                showNotification('没有可导出的图表', 'error');
+                return;
+            }
+            
+            const url = visualizationChart.toBase64Image();
+            const link = document.createElement('a');
+            link.href = url;
+            link.download = 'can_visualization.png';
+            link.click();
+            
+            showNotification('图表已导出为PNG文件', 'success');
+        }
+
+        function downloadFile(content, fileName, contentType) {
+            const a = document.createElement('a');
+            const file = new Blob([content], { type: contentType });
+            a.href = URL.createObjectURL(file);
+            a.download = fileName;
+            a.click();
+            URL.revokeObjectURL(a.href);
+        }
+
+        // UI辅助函数
+        function clearData() {
+            canData = [];
+            filteredData = [];
+            currentFile = null;
+            currentPage = 1;
+            
+            fileUpload.value = '';
+            fileInfo.textContent = '';
+            parseButton.disabled = true;
+            clearButton.disabled = true;
+            
+            filterSection.classList.add('hidden');
+            dataTableSection.classList.add('hidden');
+            visualizationSection.classList.add('hidden');
+            exportSection.classList.add('hidden');
+            
+            messageTypeFilter.value = 'all';
+            
+            // 清理分类表格相关数据
+            categoryCurrentPage = 1;
+            categoryFilteredData = [];
+            categoryCalculatedColumns = {};
+            categoryTableSection.classList.add('hidden');
+            
+            // 清理计算结果列数据
+            calculatedColumns = {};
+            
+            // 清理左侧滑窗自动识别的字段
+            const autoDetectedFields = document.getElementById('autoDetectedFields');
+            if (autoDetectedFields) {
+                autoDetectedFields.innerHTML = '<p class="text-sm text-gray-500 dark:text-gray-400">暂无解析结果</p>';
+            }
+            
+            // 清理公式结果下拉框
+            const formulaResultSelect = document.getElementById('formulaResultSelect');
+            if (formulaResultSelect) {
+                formulaResultSelect.innerHTML = '<option value="">请选择</option>';
+            }
+            
+            // 清理公式结果内容
+            const formulaResultContent = document.getElementById('formulaResultContent');
+            if (formulaResultContent) {
+                formulaResultContent.innerHTML = '<p class="text-sm text-gray-500 dark:text-gray-400">请先应用公式解析数据</p>';
+            }
+            
+            if (visualizationChart) {
+                visualizationChart.destroy();
+                visualizationChart = null;
+            }
+            
+            showNotification('所有数据已清除', 'info');
+        }
+
+        function showLoading(text, showProgress = false) {
+            loadingText.textContent = text || '处理中，请稍候...';
+            if (showProgress) {
+                progressContainer.classList.remove('hidden');
+                progressText.classList.remove('hidden');
+                progressBar.style.width = '0%';
+                progressText.textContent = '0%';
+            } else {
+                progressContainer.classList.add('hidden');
+                progressText.classList.add('hidden');
+            }
+            loadingModal.classList.remove('hidden');
+        }
+
+        function updateProgress(percent) {
+            progressBar.style.width = `${percent}%`;
+            progressText.textContent = `${percent}%`;
+        }
+
+        function hideLoading() {
+            loadingModal.classList.add('hidden');
+        }
+
+        function showNotification(text, type = 'info') {
+            notificationText.textContent = text;
+            
+            // 设置图标和颜色
+            notificationIcon.className = '';
+            notification.className = 'fixed bottom-4 right-4 px-6 py-3 rounded-lg shadow-lg transform transition-all duration-300 translate-y-0 opacity-100 z-50 flex items-center space-x-3';
+            
+            switch (type) {
+                case 'success':
+                    notificationIcon.className = 'fa fa-check-circle text-lg text-success';
+                    notification.classList.add('bg-green-100', 'text-green-800', 'dark:bg-green-900', 'dark:text-green-200');
+                    break;
+                case 'error':
+                    notificationIcon.className = 'fa fa-exclamation-circle text-lg text-danger';
+                    notification.classList.add('bg-red-100', 'text-red-800', 'dark:bg-red-900', 'dark:text-red-200');
+                    break;
+                case 'warning':
+                    notificationIcon.className = 'fa fa-exclamation-triangle text-lg text-warning';
+                    notification.classList.add('bg-yellow-100', 'text-yellow-800', 'dark:bg-yellow-900', 'dark:text-yellow-200');
+                    break;
+                default:
+                    notificationIcon.className = 'fa fa-info-circle text-lg text-primary';
+                    notification.classList.add('bg-blue-100', 'text-blue-800', 'dark:bg-blue-900', 'dark:text-blue-200');
+            }
+            
+            // 3秒后自动隐藏
+            setTimeout(() => {
+                notification.classList.add('translate-y-20', 'opacity-0');
+            }, 3000);
+        }
+
+        function formatFileSize(bytes) {
+            if (bytes === 0) return '0 Bytes';
+            
+            const k = 1024;
+            const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+            const i = Math.floor(Math.log(bytes) / Math.log(k));
+            
+            return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+        }
+
+        // 分类表格相关函数
+        function switchToCategoryTableView() {
+            if (canData.length === 0) {
+                showNotification('请先解析CAN数据', 'error');
+                return;
+            }
+            
+            // 填充分类表格中的CAN报文标识符下拉框
+            populateCategoryCanIdDropdown();
+            
+            // 显示分类表格区域，隐藏普通表格区域
+            dataTableSection.classList.add('hidden');
+            categoryTableSection.classList.remove('hidden');
+            
+            // 重置分类表格相关变量
+            categoryCurrentPage = 1;
+            categoryFilteredData = [];
+            // 不重置categoryCalculatedColumns，以保留每个标识符的计算结果列信息
+            
+            // 自动显示第一个CAN报文标识符的数据
+            if (categoryCanId.options.length > 0) {
+                // 筛选第一个CAN报文标识符的数据
+                const selectedCanId = categoryCanId.value;
+                categoryFilteredData = canData.filter(item => item.id === selectedCanId);
+                
+                // 渲染分类表格
+                renderCategoryTable();
+            }
+            
+            showNotification('已切换到分类表格视图', 'success');
+        }
+        
+        function switchToNormalTableView() {
+            // 显示普通表格区域，隐藏分类表格区域
+            dataTableSection.classList.remove('hidden');
+            categoryTableSection.classList.add('hidden');
+            
+            showNotification('已切换到普通表格视图', 'success');
+        }
+        
+        function populateCategoryCanIdDropdown() {
+            // 获取所有唯一的CAN报文标识符
+            const uniqueIds = [...new Set(canData.map(item => item.id))];
+            
+            // 清空下拉框
+            categoryCanId.innerHTML = '';
+            
+            // 添加选项
+            uniqueIds.forEach(id => {
+                const option = document.createElement('option');
+                option.value = id;
+                option.textContent = id;
+                categoryCanId.appendChild(option);
+            });
+            
+            // 默认选择第一个选项
+            if (uniqueIds.length > 0) {
+                categoryCanId.value = uniqueIds[0];
+            }
+            
+            // 添加选择变化事件监听
+            categoryCanId.addEventListener('change', function() {
+                const selectedCanId = categoryCanId.value;
+                categoryFilteredData = canData.filter(item => item.id === selectedCanId);
+                categoryCurrentPage = 1;
+                renderCategoryTable();
+            });
+        }
+        
+        function applyCategoryCustomFormula(canId, byteIndex, offset, precision, description) {
+            // 验证输入
+            if (!canId) {
+                showNotification('请选择CAN报文标识符', 'error');
+                return;
+            }
+            
+            if (isNaN(byteIndex) || byteIndex < 0 || byteIndex > 7) {
+                showNotification('数据字节位置必须是0-7之间的整数', 'error');
+                return;
+            }
+            
+            // 筛选指定CAN报文标识符的数据
+            categoryFilteredData = canData.filter(item => item.id === canId);
+            
+            // 存储计算结果列信息，以CAN报文标识符为键
+            categoryCalculatedColumns[canId] = {
+                byteIndex,
+                offset,
+                precision,
+                description
+            };
+            
+            // 如果当前在分类表格视图，则重新渲染表格
+            if (!categoryTableSection.classList.contains('hidden')) {
+                renderCategoryTable();
+            }
+            
+            return true;
+        }
+        
+        function renderCategoryTable() {
+            // 清空表格
+            categoryTableBody.innerHTML = '';
+            
+            if (categoryFilteredData.length === 0) {
+                showNotification('没有可显示的数据', 'error');
+                return;
+            }
+            
+            // 计算分页
+            const startIndex = (categoryCurrentPage - 1) * rowsPerPage;
+            const endIndex = Math.min(startIndex + rowsPerPage, categoryFilteredData.length);
+            const pageData = categoryFilteredData.slice(startIndex, endIndex);
+            
+            // 获取当前选择的CAN报文标识符
+            const currentCanId = categoryCanId.value;
+            // 检查当前标识符是否有计算结果列
+            const hasCalculatedColumn = currentCanId && categoryCalculatedColumns[currentCanId] !== undefined;
+            // 获取所有计算结果列的表头和单元格
+            const calculatedColumnHeaders = document.querySelectorAll('.category-calculated-column');
+            calculatedColumnHeaders.forEach(header => {
+                if (hasCalculatedColumn) {
+                    header.classList.remove('hidden');
+                    // 设置表头文本为计算结果描述
+                    if (categoryCalculatedColumns[currentCanId].description) {
+                        header.textContent = categoryCalculatedColumns[currentCanId].description;
+                    }
+                } else {
+                    header.classList.add('hidden');
+                }
+            });
+            
+            // 获取所有计算结果列的单元格
+            const calculatedColumnCells = document.querySelectorAll('.category-calculated-cell');
+            calculatedColumnCells.forEach(cell => {
+                if (hasCalculatedColumn) {
+                    cell.classList.remove('hidden');
+                } else {
+                    cell.classList.add('hidden');
+                }
+            });
+            
+            // 渲染每一行数据
+            pageData.forEach(item => {
+                const row = document.createElement('tr');
+                
+                // 计算结果
+                let calculatedValue = '';
+                if (hasCalculatedColumn && item.dataBytes.length > categoryCalculatedColumns[currentCanId].byteIndex) {
+                    const rawValue = item.dataBytes[categoryCalculatedColumns[currentCanId].byteIndex];
+                    calculatedValue = ((rawValue - categoryCalculatedColumns[currentCanId].offset) * categoryCalculatedColumns[currentCanId].precision).toFixed(2);
+                }
+                
+                // 格式化数据字节
+                const dataBytesStr = item.dataBytes.map(byte => byte.toString(16).padStart(2, '0').toUpperCase()).join(' ');
+                
+                row.innerHTML = `
+                    <td class="px-4 py-2 border-b">${item.messageNumber}</td>
+                    <td class="px-4 py-2 border-b">${item.timeOffset.toFixed(3)}</td>
+                    <td class="px-4 py-2 border-b">${item.bus}</td>
+                    <td class="px-4 py-2 border-b">${item.type}</td>
+                    <td class="px-4 py-2 border-b">${item.id}</td>
+                    <td class="px-4 py-2 border-b">${item.dlc}</td>
+                    <td class="px-4 py-2 border-b">${dataBytesStr}</td>
+                    ${hasCalculatedColumn ? `<td class="px-4 py-2 border-b font-medium category-calculated-cell">${calculatedValue}</td>` : '<td class="px-4 py-2 border-b font-medium category-calculated-cell hidden"></td>'}
+                `;
+                
+                categoryTableBody.appendChild(row);
+            });
+            
+            // 更新分页信息
+            updateCategoryPagination();
+        }
+        
+        function updateCategoryPagination() {
+            const totalPages = Math.ceil(categoryFilteredData.length / rowsPerPage);
+            
+            // 更新显示数量
+            const startIndex = (categoryCurrentPage - 1) * rowsPerPage + 1;
+            const endIndex = Math.min(categoryCurrentPage * rowsPerPage, categoryFilteredData.length);
+            categoryShownCount.textContent = `${startIndex}-${endIndex}`;
+            categoryTotalCount.textContent = categoryFilteredData.length;
+            
+            // 更新按钮状态
+            categoryPrevPage.disabled = categoryCurrentPage <= 1;
+            categoryNextPage.disabled = categoryCurrentPage >= totalPages;
+        }
+        
+        function goToCategoryPrevPage() {
+            if (categoryCurrentPage > 1) {
+                categoryCurrentPage--;
+                renderCategoryTable();
+            }
+        }
+        
+        function goToCategoryNextPage() {
+            const totalPages = Math.ceil(categoryFilteredData.length / rowsPerPage);
+            if (categoryCurrentPage < totalPages) {
+                categoryCurrentPage++;
+                renderCategoryTable();
+            }
+        }
+
+        // 可视化相关变量
+        let chartDataSets = [];
+        
+        // 初始化可视化侧边栏
+        function initVisualizationSidebar() {
+            const expandVisualizationSidebar = document.getElementById('expandVisualizationSidebar');
+            const toggleVisualizationSidebar = document.getElementById('toggleVisualizationSidebar');
+            const closeVisualizationSidebar = document.getElementById('closeVisualizationSidebar');
+            const visualizationSidebar = document.getElementById('visualizationSidebar');
+            const visualizationSidebarCollapsed = document.getElementById('visualizationSidebarCollapsed');
+            const visualizationSidebarExpanded = document.getElementById('visualizationSidebarExpanded');
+            const clearChart = document.getElementById('clearChart');
+            
+            // 展开侧边栏
+            expandVisualizationSidebar.addEventListener('click', () => {
+                visualizationSidebar.style.display = 'block';
+                visualizationSidebar.style.width = '33.333333%';
+                visualizationSidebarCollapsed.classList.add('hidden');
+                visualizationSidebarExpanded.classList.remove('hidden');
+            });
+            
+            // 切换侧边栏
+            toggleVisualizationSidebar.addEventListener('click', () => {
+                if (visualizationSidebar.style.width === '50px') {
+                    visualizationSidebar.style.display = 'block';
+                    visualizationSidebar.style.width = '33.333333%';
+                    visualizationSidebarCollapsed.classList.add('hidden');
+                    visualizationSidebarExpanded.classList.remove('hidden');
+                } else {
+                    visualizationSidebar.style.width = '50px';
+                    visualizationSidebarCollapsed.classList.remove('hidden');
+                    visualizationSidebarExpanded.classList.add('hidden');
+                }
+            });
+            
+            // 关闭侧边栏
+            closeVisualizationSidebar.addEventListener('click', () => {
+                visualizationSidebar.style.width = '50px';
+                visualizationSidebarCollapsed.classList.remove('hidden');
+                visualizationSidebarExpanded.classList.add('hidden');
+            });
+            
+            // 清除图表
+            clearChart.addEventListener('click', () => {
+                if (visualizationChart) {
+                    visualizationChart.destroy();
+                    visualizationChart = null;
+                }
+                chartDataSets = [];
+                document.getElementById('visualizationChart').classList.add('hidden');
+                document.getElementById('chartInfo').classList.add('hidden');
+            });
+        }
+        
+        // 更新自动识别的字段列表
+        function updateAutoDetectedFields() {
+            const autoDetectedFields = document.getElementById('autoDetectedFields');
+            const generateChartBtn = document.getElementById('generateChart');
+            
+            // 检查是否有任何解析结果
+            const hasAnyResults = Object.keys(calculatedColumns).length > 0 && 
+                                 Object.values(calculatedColumns).some(fields => Object.keys(fields).length > 0);
+            
+            if (!hasAnyResults) {
+                autoDetectedFields.innerHTML = '<p class="text-sm text-gray-500 dark:text-gray-400">暂无解析结果</p>';
+                generateChartBtn.disabled = true;
+                return;
+            }
+            
+            autoDetectedFields.innerHTML = '';
+            
+            // 获取当前选中的CAN ID
+            const selectedCanId = document.getElementById('canIdCategory').value;
+            
+            // 为每个CAN ID和其字段创建复选框
+            let fieldIndex = 0;
+            for (const [canId, fields] of Object.entries(calculatedColumns)) {
+                if (Object.keys(fields).length === 0) continue;
+                
+                // 为CAN ID创建分组标题
+                const canIdHeader = document.createElement('div');
+                canIdHeader.className = 'text-sm font-medium text-gray-700 dark:text-gray-300 mt-2 mb-1';
+                canIdHeader.textContent = `CAN ID: ${canId}${canId === selectedCanId ? ' (当前选中)' : ''}`;
+                autoDetectedFields.appendChild(canIdHeader);
+                
+                // 为每个字段创建复选框
+                for (const description of Object.keys(fields)) {
+                    const fieldDiv = document.createElement('div');
+                    fieldDiv.className = 'flex items-center p-2 bg-gray-100 dark:bg-gray-700 rounded hover:bg-gray-200 dark:hover:bg-gray-600 transition';
+                    
+                    const checkbox = document.createElement('input');
+                    checkbox.type = 'checkbox';
+                    checkbox.id = `field_${fieldIndex}`;
+                    // 在value中存储CAN ID和描述，用分隔符分开
+                    checkbox.value = `${canId}|${description}`;
+                    checkbox.className = 'mr-2 h-4 w-4 text-primary focus:ring-primary border-gray-300 rounded';
+                    
+                    const label = document.createElement('label');
+                    label.htmlFor = `field_${fieldIndex}`;
+                    label.className = 'text-sm text-gray-800 dark:text-gray-200 cursor-pointer flex-grow';
+                    label.textContent = description;
+                    
+                    const colorIndicator = document.createElement('div');
+                    colorIndicator.className = 'w-3 h-3 rounded-full mr-2';
+                    // 为每个字段分配一个颜色
+                    const colors = ['bg-red-500', 'bg-blue-500', 'bg-green-500', 'bg-yellow-500', 'bg-purple-500', 'bg-pink-500', 'bg-indigo-500'];
+                    colorIndicator.className += ` ${colors[fieldIndex % colors.length]}`;
+                    
+                    fieldDiv.appendChild(checkbox);
+                    fieldDiv.appendChild(colorIndicator);
+                    fieldDiv.appendChild(label);
+                    
+                    autoDetectedFields.appendChild(fieldDiv);
+                    fieldIndex++;
+                }
+            }
+            
+            // 启用生成图表按钮
+            generateChartBtn.disabled = false;
+            
+            // 添加生成图表按钮的点击事件
+            generateChartBtn.onclick = function() {
+                const selectedFields = [];
+                const checkboxes = autoDetectedFields.querySelectorAll('input[type="checkbox"]:checked');
+                
+                checkboxes.forEach(checkbox => {
+                    // 从value中解析CAN ID和描述
+                    const [canId, description] = checkbox.value.split('|');
+                    selectedFields.push({ canId, description });
+                });
+                
+                if (selectedFields.length === 0) {
+                    showNotification('请至少选择一个字段进行可视化', 'warning');
+                    return;
+                }
+                
+                // 清除现有图表
+                if (visualizationChart) {
+                    visualizationChart.destroy();
+                    visualizationChart = null;
+                }
+                chartDataSets = [];
+                
+                // 添加选中的字段到图表
+                selectedFields.forEach(({ canId, description }) => {
+                    addDataToChart(canId, description);
+                });
+                
+                // 确保侧边栏展开
+                const visualizationSidebar = document.getElementById('visualizationSidebar');
+                const visualizationSidebarCollapsed = document.getElementById('visualizationSidebarCollapsed');
+                const visualizationSidebarExpanded = document.getElementById('visualizationSidebarExpanded');
+                
+                visualizationSidebar.style.display = 'block';
+                visualizationSidebar.style.width = '33.333333%';
+                visualizationSidebarCollapsed.classList.add('hidden');
+                visualizationSidebarExpanded.classList.remove('hidden');
+            };
+        }
+        
+        // 添加数据到图表
+        function addDataToChart(canId, description) {
+            if (!calculatedColumns[canId] || !calculatedColumns[canId][description]) {
+                showNotification('找不到对应的解析结果', 'error');
+                return;
+            }
+            
+            const formulaData = calculatedColumns[canId][description];
+            const results = formulaData.results;
+            
+            if (!results || results.length === 0) {
+                showNotification('解析结果为空', 'error');
+                return;
+            }
+            
+            // 准备图表数据
+            const labels = results.map(r => r.timeOffset);
+            const data = results.map(r => r.parsedValue);
+            
+            // 如果图表不存在，创建新图表
+            if (!visualizationChart) {
+                const ctx = document.getElementById('visualizationChart').getContext('2d');
+                visualizationChart = new Chart(ctx, {
+                    type: 'line',
+                    data: {
+                        labels: labels,
+                        datasets: []
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        plugins: {
+                            legend: {
+                                position: 'top',
+                            },
+                            tooltip: {
+                                mode: 'index',
+                                intersect: false,
+                            }
+                        },
+                        scales: {
+                            x: {
+                                display: true,
+                                title: {
+                                    display: false
+                                },
+                                ticks: {
+                                    callback: function(value, index, values) {
+                                        // 只显示第一个和最后一个标签
+                                        if (index === 0 || index === values.length - 1) {
+                                            return this.getLabelForValue(value) + 'ms';
+                                        }
+                                        return '';
+                                    }
+                                }
+                            },
+                            y: {
+                                display: true,
+                                title: {
+                                    display: false
+                                }
+                            }
+                        }
+                    }
+                });
+                
+                // 显示图表，隐藏提示信息
+                document.getElementById('visualizationChart').classList.remove('hidden');
+                document.getElementById('chartInfo').classList.remove('hidden');
+            }
+            
+            // 检查是否已存在相同描述的数据集
+            const existingDatasetIndex = chartDataSets.findIndex(ds => ds.description === description);
+            
+            if (existingDatasetIndex >= 0) {
+                // 更新现有数据集
+                visualizationChart.data.datasets[existingDatasetIndex].data = data;
+            } else {
+                // 添加新数据集
+                const colors = [
+                    'rgb(239, 68, 68)',   // red
+                    'rgb(59, 130, 246)',   // blue
+                    'rgb(16, 185, 129)',   // green
+                    'rgb(245, 158, 11)',   // yellow
+                    'rgb(139, 92, 246)',   // purple
+                    'rgb(236, 72, 153)',   // pink
+                    'rgb(99, 102, 241)'    // indigo
+                ];
+                
+                const colorIndex = chartDataSets.length % colors.length;
+                
+                visualizationChart.data.datasets.push({
+                    label: description,
+                    data: data,
+                    borderColor: colors[colorIndex],
+                    backgroundColor: colors[colorIndex] + '20',
+                    tension: 0.1,
+                    fill: false
+                });
+                
+                chartDataSets.push({
+                    description: description,
+                    canId: canId
+                });
+            }
+            
+            // 更新图表
+            visualizationChart.update();
+            
+            // 更新图表信息
+            updateChartInfo();
+            
+            // 显示可视化侧边栏
+            const visualizationSidebar = document.getElementById('visualizationSidebar');
+            if (visualizationSidebar.style.display === 'none') {
+                visualizationSidebar.style.display = 'block';
+                visualizationSidebar.style.width = '33.333333%';
+                document.getElementById('visualizationSidebarCollapsed').classList.add('hidden');
+                document.getElementById('visualizationSidebarExpanded').classList.remove('hidden');
+            }
+        }
+        
+        // 更新图表信息
+        function updateChartInfo() {
+            if (!visualizationChart || chartDataSets.length === 0) {
+                return;
+            }
+            
+            // 获取时间范围
+            const labels = visualizationChart.data.labels;
+            const minTime = Math.min(...labels);
+            const maxTime = Math.max(...labels);
+            
+            document.getElementById('timeRange').textContent = `${minTime.toFixed(3)}ms - ${maxTime.toFixed(3)}ms`;
+            
+            // 获取数据字段
+            const fieldNames = chartDataSets.map(ds => ds.description).join(', ');
+            document.getElementById('dataFields').textContent = fieldNames;
+        }
+        
+
+
+        // 水印保护机制 - 防篡改检测
+        function watermarkProtection() {            // 混淆的关键字符串
+            const _0x5a6b = ['JSET', 'body::before', 'content', 'position', 'fixed', 'z-index', '-1', 'font-size', '10rem', 'color', 'rgba(0, 0, 0, 0.03)', 'transform', 'rotate(-45deg)', 'user-select', 'none'];
+            
+            // 创建水印元素
+            function createWatermark() {
+                // 检查是否已存在水印
+                let watermark = document.querySelector('watermark-protection');
+                if (!watermark) {
+                    watermark = document.createElement('style');
+                    watermark.setAttribute('id', 'watermark-protection');
+                    watermark.setAttribute('data-protected', 'true');
+                    document.head.appendChild(watermark);
+                }
+                
+                // 生成混淆的CSS
+                const cssText = `body::before{${_0x5a6b[2]}:'${_0x5a6b[0]}';${_0x5a6b[3]}:${_0x5a6b[4]};top:0;left:0;width:100%;height:100%;${_0x5a6b[5]}:${_0x5a6b[6]};${_0x5a6b[7]}:${_0x5a6b[8]};font-weight:bold;${_0x5a6b[9]}:${_0x5a6b[10]};display:flex;justify-content:center;align-items:center;${_0x5a6b[11]}:${_0x5a6b[12]};pointer-events:none;letter-spacing:2rem;text-transform:uppercase;${_0x5a6b[13]}:${_0x5a6b[14]};-webkit-${_0x5a6b[13]}:${_0x5a6b[14]};-moz-${_0x5a6b[13]}:${_0x5a6b[14]};-ms-${_0x5a6b[13]}:${_0x5a6b[14]};touch-action:none;}`;
+                
+                // 使用简单的加密算法处理CSS文本
+                let encryptedCss = '';
+                for (let i = 0; i < cssText.length; i++) {
+                    encryptedCss += String.fromCharCode(cssText.charCodeAt(i) ^ 3);
+                }
+                
+                // 存储加密的CSS
+                watermark.setAttribute('data-encrypted', encryptedCss);
+                
+                // 解密并应用CSS
+                let decryptedCss = '';
+                for (let i = 0; i < encryptedCss.length; i++) {
+                    decryptedCss += String.fromCharCode(encryptedCss.charCodeAt(i) ^ 3);
+                }
+                
+                watermark.textContent = decryptedCss;
+            }
+            
+            // 验证水印完整性
+            function verifyWatermark() {
+                const watermark = document.querySelector('#watermark-protection');
+                if (!watermark) {
+                    createWatermark();
+                    return;
+                }
+                
+                const encryptedCss = watermark.getAttribute('data-encrypted');
+                if (!encryptedCss) {
+                    createWatermark();
+                    return;
+                }
+                
+                // 解密存储的CSS
+                let decryptedCss = '';
+                for (let i = 0; i < encryptedCss.length; i++) {
+                    decryptedCss += String.fromCharCode(encryptedCss.charCodeAt(i) ^ 3);
+                }
+                
+                // 比较当前CSS与解密后的CSS
+                if (watermark.textContent !== decryptedCss) {
+                    // 水印被篡改，重新创建
+                    createWatermark();
+                    
+                    // 显示警告（可选）
+                    console.warn('检测到水印被篡改，已自动恢复');
+                }
+            }
+            
+            // 创建初始水印
+            createWatermark();
+            
+            // 定期验证水印
+            setInterval(verifyWatermark, 1000);
+            
+            // 监听DOM变化
+            const observer = new MutationObserver(function(mutations) {
+                mutations.forEach(function(mutation) {
+                    if (mutation.type === 'childList' || mutation.type === 'attributes') {
+                        verifyWatermark();
+                    }
+                });
+            });
+            
+            // 观察整个文档的变化
+            observer.observe(document.documentElement, {
+                childList: true,
+                attributes: true,
+                subtree: true
+            });
+        }
+        
+        // 添加页面注脚保护
+        function addProtectedFooter() {
+            // 检查是否已存在注脚
+            let footer = document.querySelector('footer[data-protected]');
+            if (!footer) {
+                footer = document.createElement('footer');
+                footer.setAttribute('data-protected', 'true');
+                footer.style.cssText = 'position:fixed;bottom:0;left:0;width:100%;text-align:center;padding:10px;background:rgba(0,0,0,0.05);font-size:12px;color:rgba(0,0,0,0.5);z-index:1000;user-select:none;-webkit-user-select:none;-moz-user-select:none;-ms-user-select:none;';
+                
+                // 创建混淆的注脚文本
+                const footerText = ['JSET', '版权所有', '©', '2023'].join(' ');
+                footer.textContent = footerText;
+                
+                document.body.appendChild(footer);
+            }
+        }
+        
+        // 反调试保护机制
+        function antiDebug() {
+            // 混淆的关键变量名
+            const _0x2c3d = ['open', 'orientation', 'outerHeight', 'innerHeight', 'outerWidth', 'innerWidth', 'setInterval', 'log', '%c警告: 检测到开发者工具已打开，请不要修改水印和注脚内容', 'color: red; font-size: 20px; font-weight: bold;', 'Date', 'debugger', 'clear', 'addEventListener', 'preventDefault', 'keyCode', 'ctrlKey', 'shiftKey'];
+            
+            // 检测开发者工具是否打开
+            let devtools = {
+                [_0x2c3d[0]]: false,
+                [_0x2c3d[1]]: null
+            };
+            
+            // 检测开发者工具的方法
+            const threshold = 160;
+            window[_0x2c3d[6]](function() {
+                if (window[_0x2c3d[2]] - window[_0x2c3d[3]] > threshold || 
+                    window[_0x2c3d[4]] - window[_0x2c3d[5]] > threshold) {
+                    // 开发者工具可能已打开
+                    if (!devtools[_0x2c3d[0]]) {
+                        devtools[_0x2c3d[0]] = true;
+                        
+                        // 重新应用水印保护
+                        watermarkProtection();
+                        
+                        // 重新添加受保护的注脚
+                        addProtectedFooter();
+                        
+                        // 在控制台输出警告（可选）
+                        console[_0x2c3d[7]](_0x2c3d[8], _0x2c3d[9]);
+                    }
+                } else {
+                    devtools[_0x2c3d[0]] = false;
+                }
+            }, 500);
+            
+            // 禁用右键菜单
+            document[_0x2c3d[14]]('contextmenu', function(e) {
+                e[_0x2c3d[15]]();
+                return false;
+            });
+            
+            // 禁用文本选择
+            document[_0x2c3d[14]]('selectstart', function(e) {
+                if (e.target.closest('body::before') || e.target.closest('footer[data-protected]')) {
+                    e[_0x2c3d[15]]();
+                    return false;
+                }
+            });
+            
+            // 禁用F12, Ctrl+Shift+I, Ctrl+Shift+J, Ctrl+Shift+C等快捷键
+            document[_0x2c3d[14]]('keydown', function(e) {
+                if (e[_0x2c3d[16]] === 123 || // F12
+                    (e[_0x2c3d[18]] && e[_0x2c3d[19]] && e[_0x2c3d[16]] === 73) || // Ctrl+Shift+I
+                    (e[_0x2c3d[18]] && e[_0x2c3d[19]] && e[_0x2c3d[16]] === 74) || // Ctrl+Shift+J
+                    (e[_0x2c3d[18]] && e[_0x2c3d[19]] && e[_0x2c3d[16]] === 67) || // Ctrl+Shift+C
+                    (e[_0x2c3d[18]] && e[_0x2c3d[16]] === 85)) { // Ctrl+U
+                    e[_0x2c3d[15]]();
+                    return false;
+                }
+            });
+        }
+        
+        // 初始化应用
+        document.addEventListener('DOMContentLoaded', () => {
+            // 初始化水印保护
+            watermarkProtection();
+            
+            // 添加受保护的注脚
+            addProtectedFooter();
+            
+            // 启用反调试保护
+            antiDebug();
+            
+            initEventListeners();
+            initializeBitMatrix();
+            initVisualizationSidebar(); // 初始化可视化侧边栏
+            
+            // 添加导出Excel按钮事件监听
+            document.getElementById('exportExcel').addEventListener('click', exportToExcel);
+            
+            // 添加CAN表格更新事件监听
+            document.addEventListener('canTableUpdate', (event) => {
+                if (event.detail.action === 'refresh') {
+                    // 立即更新表格，确保显示最新数据
+                    const selectedCanId = canIdCategory.value;
+                    if (selectedCanId === 'all') {
+                        // 如果显示所有CAN ID，重新应用过滤条件
+                        applyFilter();
+                    } else {
+                        // 如果显示特定CAN ID，更新该CAN ID的计算结果列
+                        updateTableWithCalculatedData(selectedCanId);
+                    }
+                }
+            });
+            
+            // 添加CAN分类表格更新事件监听
+            document.addEventListener('canCategoryTableUpdate', (event) => {
+                if (event.detail.action === 'refresh' && event.detail.canId) {
+                    // 更新特定CAN ID的分类表格
+                    const canId = event.detail.canId;
+                    if (calculatedColumns[canId] && Object.keys(calculatedColumns[canId]).length > 0) {
+                        updateTableWithCalculatedData(canId);
+                    } else {
+                        // 如果该CAN ID没有解析结果了，移除计算结果列
+                        document.querySelectorAll('.calculated-column').forEach(el => {
+                            el.remove();
+                        });
+                    }
+                } else if (event.detail.action === 'refreshAll') {
+                    // 更新所有分类表格
+                    document.querySelectorAll('.calculated-column').forEach(el => {
+                        el.remove();
+                    });
+                    applyFilter();
+                }
+            });
+            
+            // 默认显示位矩阵
+            bitSelectionMatrix.classList.remove('hidden');
+            isBitSelectionMode = true;
+            byteModeBtn.classList.remove('bg-primary', 'text-white');
+            byteModeBtn.classList.add('bg-gray-200', 'dark:bg-gray-700', 'text-gray-800', 'dark:text-gray-200');
+            bitModeBtn.classList.remove('bg-gray-200', 'dark:bg-gray-700', 'text-gray-800', 'dark:text-gray-200');
+            bitModeBtn.classList.add('bg-primary', 'text-white');
+        });
+    </script>
+</body>
+</html>
